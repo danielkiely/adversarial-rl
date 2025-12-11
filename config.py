@@ -15,7 +15,7 @@ class LocalGRPOConfig(GRPOConfig):
     epsilon: float = field(default=0.5)
 
     attacker_model_name_or_path: Optional[str] = field(
-        default="meta-llama/Llama-3.1-8B-Instruct"
+        default="meta-llama/Llama-3.2-1B-Instruct"
     )
     model_dtype: Optional[str] = field(default="bfloat16")
     target_model_name_or_path: Optional[str] = field(default="")
@@ -34,6 +34,7 @@ class LocalGRPOConfig(GRPOConfig):
     target_model_temperature: float = field(default=None)
     reasoning_effort: str = field(default="minimal")  # minimal, low, medium, high
     model_wise_reward_weights: Optional[list[float]] = field(default=None)
+    output_dir: str = field(default="/scratch0/dmkiely/grpo_cache")
 
 
 @dataclass
@@ -43,8 +44,8 @@ class EvalConfig:
     max_new_tokens: int = 1024
     val_max_new_tokens: int = 512
 
-    attacker_model_name_or_path: str = "meta-llama/Llama-3.1-8B-Instruct"
-    attacker_base_model_name_or_path: str = "meta-llama/Llama-3.1-8B-Instruct"
+    attacker_model_name_or_path: str = "meta-llama/Llama-3.2-1B-Instruct"
+    attacker_base_model_name_or_path: str = "meta-llama/Llama-3.2-1B-Instruct"
     target_model_name_or_path: str = "meta-llama/Llama-3.1-8B-Instruct"
     reasoning_effort: str = field(default="minimal")  # minimal, low, medium, high
     attacker_model_dtype: str = "bfloat16"

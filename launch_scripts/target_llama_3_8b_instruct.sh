@@ -13,18 +13,23 @@ export VLLM_WORKER_MULTIPROC_METHOD=spawn
 LR=1e-5
 RUN_NAME=rl_hammer_target_llama_3_1_8b_instruct_lora
 
-ATTACKER_MODEL_NAME_OR_PATH=meta-llama/Llama-3.1-8B-Instruct
-TARGET_MODEL_NAME_OR_PATH=meta-llama/Llama-3.1-8B-Instruct
+ATTACKER_MODEL_NAME_OR_PATH=meta-llama/Llama-3.2-3B-Instruct
+TARGET_MODEL_NAME_OR_PATH=meta-llama/Llama-3.2-3B-Instruct
 
-# Launch target model on GPU 7
-export CUDA_VISIBLE_DEVICES=7
+echo "set params"
+
+# Launch target model on GPU 3
+export CUDA_VISIBLE_DEVICES=3
 python -m vllm.entrypoints.openai.api_server \
     --model ${TARGET_MODEL_NAME_OR_PATH} \
+    --max-model-len 8192 \
     --port 8010 > /dev/null 2>&1 &
 
 until curl -s http://localhost:8010/v1/models; do sleep 5; done
 
-export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6
+echo "starting training"
+
+export CUDA_VISIBLE_DEVICES=0,1,2
 accelerate launch \
     train.py \
     --attacker_model_name_or_path ${ATTACKER_MODEL_NAME_OR_PATH} \
@@ -33,11 +38,11 @@ accelerate launch \
     --reward_functions InjecAgentToolCallingReward \
     --dataset data/InjecAgent/dataset/train.json \
     --attn_implementation flash_attention_2 \
-    --num_generations 32 \
+    --num_generations 8 \
     --num_iterations 1 \
-    --per_device_train_batch_size 16 \
-    --gradient_accumulation_steps 2 \
-    --num_train_epochs 40 \
+    --per_device_train_batch_size 4 \
+    --gradient_accumulation_steps 4 \
+    --num_train_epochs 10 \
     --bf16 True \
     --beta 0.0 \
     --warmup_ratio 0.03 \

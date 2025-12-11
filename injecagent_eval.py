@@ -190,6 +190,7 @@ def main():
                 trust_remote_code=True,
                 enable_lora=True,
                 max_lora_rank=128,
+		max_model_len=8192,
             )
             lora_request = LoRARequest(
                 "attack_lora", 1, lora_path=args.attacker_model_name_or_path
@@ -199,6 +200,7 @@ def main():
                 model=args.attacker_model_name_or_path,
                 dtype=args.attacker_model_dtype,
                 trust_remote_code=True,
+		max_model_len=8192,
             )
             lora_request = None
         attacker_tokenizer = AutoTokenizer.from_pretrained(
@@ -303,6 +305,7 @@ def main():
             dtype=args.target_model_dtype,
             trust_remote_code=True,
             tensor_parallel_size=torch.cuda.device_count(),
+	    max_model_len=8192,
         )
         target_tokenizer = AutoTokenizer.from_pretrained(
             args.target_model_name_or_path, trust_remote_code=True

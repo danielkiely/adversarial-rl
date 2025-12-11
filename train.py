@@ -22,7 +22,7 @@ def main(grpo_config, model_config):
     # Load dataset
     train_set = InjecAgentDataset(grpo_config.dataset)
 
-    # Add reward functions
+    # Add reward functions - right now this is only the InjecAgentToolCallingReward
     reward_functions = [
         ALL_REWARD_FUNCS[curr_func](grpo_config)
         for curr_func in grpo_config.reward_functions

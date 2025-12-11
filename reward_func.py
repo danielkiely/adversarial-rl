@@ -43,6 +43,9 @@ from injecagent_output_parsing import (
 
 
 def extract_attack_goal(prompt):
+    """
+    takes prompt, returns the attack goal
+    """
     all_possible_key_words = [
         "Task Objective: ",
         "Task Objective:",
@@ -58,6 +61,9 @@ def extract_attack_goal(prompt):
 
 
 def extract_attack_prompt(prompt):
+    """
+    
+    """
     all_possible_key_words = ["attack", "prompt"]
     for key_word in all_possible_key_words:
         if f"<{key_word}>" in prompt:
@@ -122,52 +128,59 @@ def if_judge_success(judge_output):
 
 class InjecAgentToolCallingReward:
     def __init__(self, config):
+        """
+        Sets up the OpenAI API endpoint for the model and loads the InjecAgent tools
+        """
         self.__name__ = "InjecAgentToolCallingReward"
         self.config = config
 
         # Load all target models and tokenizers
-        self.all_target_model_name_or_path = config.target_model_name_or_path.split(";")
+        self.all_target_model_name_or_path = config.target_model_name_or_path.split(";") # this is only one model for now
         self.all_target_model_url = config.target_model_url.split(";")
         self.all_target_client = []
         self.all_target_tokenizer = []
 
         for i, model_name in enumerate(self.all_target_model_name_or_path):
-            if "/" not in model_name:
-                # Azure API
-                if "gpt" in model_name.lower():
-                    env_name = model_name.upper().replace("-", "_")
-                    api_version = os.environ[f"{env_name}_AZURE_API_VERSION"]
-                    api_key = os.environ[f"{env_name}_API_KEY"]
-                    endpoint = os.environ[f"{env_name}_ENDPOINT"]
-                    endpoint = f"https://{endpoint}"
-                    model_name = f"{model_name}"
-                    client = AzureOpenAI(
-                        api_version=api_version,
-                        api_key=api_key,
-                        azure_endpoint=endpoint,
-                    )
-                elif "gemini" in model_name.lower():
-                    api_key = os.environ["GEMINI_API_KEY"]
-                    model_name = f"{model_name}"
-                    client = OpenAI(
-                        api_key=api_key,
-                        base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-                    )
-                elif "anthropic" in model_name.lower():
-                    client = AnthropicBedrock(
-                        aws_access_key=os.environ["AWS_ACCESS_KEY_ID"],
-                        aws_secret_key=os.environ["AWS_SECRET_ACCESS_KEY"],
-                        aws_session_token=os.environ["AWS_SESSION_TOKEN"],
-                        aws_region=os.environ["AWS_REGION"],
-                    )
-                else:
-                    raise ValueError(f"Unsupported target model: {model_name}")
-                tokenizer = None
-            else:
-                client = OpenAI(base_url=self.all_target_model_url[i], api_key="EMPTY")
-                tokenizer = AutoTokenizer.from_pretrained(
-                    model_name, trust_remote_code=True
-                )
+            # if "/" not in model_name:
+            #     # Azure API
+            #     if "gpt" in model_name.lower():
+            #         env_name = model_name.upper().replace("-", "_")
+            #         api_version = os.environ[f"{env_name}_AZURE_API_VERSION"]
+            #         api_key = os.environ[f"{env_name}_API_KEY"]
+            #         endpoint = os.environ[f"{env_name}_ENDPOINT"]
+            #         endpoint = f"https://{endpoint}"
+            #         model_name = f"{model_name}"
+            #         client = AzureOpenAI(
+            #             api_version=api_version,
+            #             api_key=api_key,
+            #             azure_endpoint=endpoint,
+            #         )
+            #     elif "gemini" in model_name.lower():
+            #         api_key = os.environ["GEMINI_API_KEY"]
+            #         model_name = f"{model_name}"
+            #         client = OpenAI(
+            #             api_key=api_key,
+            #             base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+            #         )
+            #     elif "anthropic" in model_name.lower():
+            #         client = AnthropicBedrock(
+            #             aws_access_key=os.environ["AWS_ACCESS_KEY_ID"],
+            #             aws_secret_key=os.environ["AWS_SECRET_ACCESS_KEY"],
+            #             aws_session_token=os.environ["AWS_SESSION_TOKEN"],
+            #             aws_region=os.environ["AWS_REGION"],
+            #         )
+            #     else:
+            #         raise ValueError(f"Unsupported target model: {model_name}")
+            #     tokenizer = None
+            # else:
+            
+            # TODO: switch this to something that is not OpenAI
+            # this is where the target model is setup. assuming that we cannot train a model if we
+            # are using the openai api endpoint + VLLM
+            client = OpenAI(base_url=self.all_target_model_url[i], api_key="EMPTY")
+            tokenizer = AutoTokenizer.from_pretrained(
+                model_name, trust_remote_code=True
+            )
 
             self.all_target_client.append(client)
             self.all_target_tokenizer.append(tokenizer)
@@ -175,9 +188,11 @@ class InjecAgentToolCallingReward:
         self.tool_dict = injecagent_get_tool_dict()
         self.tool_dict_gpt = injecagent_get_tool_dict(gpt_format=True)
 
-    def query_vllm_text_batch(
-        self, client, prompts, model_name, max_tokens=256, temperature=None
-    ):
+    # TOOD: is max_tokens input or output, and where is that set?
+    def query_vllm_text_batch(self, client, prompts, model_name, max_tokens=256, temperature=None):
+        """
+        queries the vllm and returns the response
+        """
         try:
             kwargs = {
                 "model": model_name,
@@ -194,54 +209,58 @@ class InjecAgentToolCallingReward:
             return [""] * len(prompts)
 
     def run_target_model(self, i, user_inputs):
+        """
+        just sets up prompt template and calls function to query the llm model
+        """
         tokenizer = self.all_target_tokenizer[i]
         client = self.all_target_client[i]
         model_name = self.all_target_model_name_or_path[i]
 
-        if "secalign" in model_name.lower():
-            # Specifically for InjecAgent
-            messages = [
-                [
-                    {"role": "user", "content": INJECAGENT_SYS_PROMPT},
-                    {"role": "input", "content": user_input},
-                ]
-                for user_input in user_inputs
-            ]
-        else:
-            messages = [
-                [
-                    {"role": "system", "content": INJECAGENT_SYS_PROMPT},
-                    {"role": "user", "content": user_input},
-                ]
-                for user_input in user_inputs
-            ]
+        # if "secalign" in model_name.lower():
+        #     # Specifically for InjecAgent
+        #     messages = [
+        #         [
+        #             {"role": "user", "content": INJECAGENT_SYS_PROMPT},
+        #             {"role": "input", "content": user_input},
+        #         ]
+        #         for user_input in user_inputs
+        #     ]
+        # else:
+        #     messages = [
+        #         [
+        #             {"role": "system", "content": INJECAGENT_SYS_PROMPT},
+        #             {"role": "user", "content": user_input},
+        #         ]
+        #         for user_input in user_inputs
+        #     ]
 
-        if "/" not in model_name or "anthropic" in model_name.lower():
-            # User default system promopt for API models
-            try:
-                target_model_outputs = client(messages=messages)
-                target_model_output_texts = [
-                    output.choices[0].message.content for output in target_model_outputs
-                ]
-                for i in range(len(target_model_output_texts)):
-                    if target_model_output_texts[i] is None:
-                        # Gemini API sometimes returns None
-                        target_model_output_texts[i] = ""
-            except Exception as e:
-                print(f"Error querying Azure (batch): {e}")
-                return [""] * len(messages)
-            return target_model_output_texts
-        else:
-            prompts = tokenizer.apply_chat_template(
-                messages, add_generation_prompt=True, tokenize=False
-            )
-            return self.query_vllm_text_batch(
-                client,
-                prompts,
-                model_name,
-                max_tokens=self.config.target_model_max_completion_length,
-                temperature=self.config.target_model_temperature,
-            )
+        # if "/" not in model_name or "anthropic" in model_name.lower():
+        #     # User default system promopt for API models
+        #     try:
+        #         target_model_outputs = client(messages=messages)
+        #         target_model_output_texts = [
+        #             output.choices[0].message.content for output in target_model_outputs
+        #         ]
+        #         for i in range(len(target_model_output_texts)):
+        #             if target_model_output_texts[i] is None:
+        #                 # Gemini API sometimes returns None
+        #                 target_model_output_texts[i] = ""
+        #     except Exception as e:
+        #         print(f"Error querying Azure (batch): {e}")
+        #         return [""] * len(messages)
+        #     return target_model_output_texts
+        # else:
+        prompts = tokenizer.apply_chat_template(
+            messages, add_generation_prompt=True, tokenize=False
+        )
+        # this is where we get the response from the vllm model
+        return self.query_vllm_text_batch(
+            client,
+            prompts,
+            model_name,
+            max_tokens=self.config.target_model_max_completion_length,
+            temperature=self.config.target_model_temperature,
+        )
 
     def fetch_with_retries(
         self,
@@ -252,6 +271,9 @@ class InjecAgentToolCallingReward:
         max_retries=5,
         reasoning_effort="minimal",
     ):
+        """
+        seems to be a helper function mainly targeted at APIs with rate limits
+        """
         if "anthropic" in model_name.lower():
             messages[2] = to_anthropic_tool_call(messages[2])
             messages[3] = to_anthropic_tool_result(messages[3])
@@ -304,6 +326,9 @@ class InjecAgentToolCallingReward:
                     return ""
 
     def run_gpt_target_model(self, i, user_inputs):
+        """
+        queries the target model, keeps the returned text output and tool calls in list
+        """
         client = self.all_target_client[i]
         model_name = self.all_target_model_name_or_path[i]
         with ThreadPoolExecutor(max_workers=len(user_inputs)) as executor:
@@ -332,10 +357,23 @@ class InjecAgentToolCallingReward:
         return list(zip(target_model_output_texts, target_model_output_tool_calls))
 
     def __call__(self, prompts, completions, **kwargs):
+        """
+        Args:
+            prompts (List[str]): list of prompt messages (from InjecAgent train dataset)
+            completions (List[str]): list of completion messages
+            kwargs: the other fields in the training dataset (e.g. tool names, responses, etc.)
+        
+        Returns:
+           rewards (List[float]): list of reward values 
+        
+        TODO: figure out what goes on here
+        """
+        
+        # gather adversarial goals and prompts from the passed in prompts and completions
         adv_goals, adv_prompts = [], []
         for i in range(len(prompts)):
             curr_prompt = prompts[i][0]["content"]
-            curr_completion = completions[i][0]["content"]
+            curr_completion = completions[i][0]["content"] # TODO: figure out what this is
             goal = extract_attack_goal(curr_prompt)
             adv = extract_attack_prompt(curr_completion)
             adv_goals.append(goal)
@@ -358,9 +396,12 @@ class InjecAgentToolCallingReward:
             available_tool_descriptions = json.dumps(
                 [self.tool_dict[tool] for tool in available_tool_names], indent=True
             )
+            # put the adversarial prompt into the agent scratchpad
             obvervation = curr_data_row["Tool Response Template"].replace(
                 "<Attacker Instruction>", adv_prompts[i]
             )
+            # some weird thing that essentially allows the agent to think here i think - this builds up the agent's reasoning trace
+            # i guess this is in the InjecAgent dataset lol
             agent_scratchpad = f"\n{curr_data_row['Thought']}\nAction: {curr_data_row['User Tool']}\nAction Input: {curr_data_row['Tool Parameters']}\nObservation: {obvervation}\n"
 
             user_prompt_filled = INJECAGENT_USER_PROMPT.format(
@@ -376,12 +417,8 @@ class InjecAgentToolCallingReward:
         all_available_tools = []
         for i in range(len(prompts)):
             curr_data_row = data[i]
-            available_tool_names = [curr_data_row["User Tool"]] + curr_data_row[
-                "Attacker Tools"
-            ]
-            available_tools = [
-                self.tool_dict_gpt[tool] for tool in available_tool_names
-            ]
+            available_tool_names = [curr_data_row["User Tool"]] + curr_data_row["Attacker Tools"]
+            available_tools = [self.tool_dict_gpt[tool] for tool in available_tool_names]
             messages = [
                 {"role": "system", "content": INJECAGENT_SYS_PROMPT},
                 {"role": "user", "content": curr_data_row["User Instruction"]},
@@ -405,6 +442,7 @@ class InjecAgentToolCallingReward:
             )
             messages.append(message)
 
+            # insert adversarial prompt into the tool response here
             obvervation = curr_data_row["Tool Response Template"].replace(
                 "<Attacker Instruction>", adv_prompts[i]
             )
