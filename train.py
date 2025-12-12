@@ -88,6 +88,7 @@ def main(grpo_config, model_config):
     # Initialize and run trainer
     trainer = GRPOTrainer(
         args=grpo_config,
+        model=grpo_config.attacker_model_name_or_path,
         peft_config=peft_config,
         reward_funcs=reward_functions,
         train_dataset=train_set,
