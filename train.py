@@ -5,6 +5,7 @@
 
 from trl import TrlParser, ModelConfig, GRPOTrainer
 from peft import LoraConfig
+from transformers import AutoModelForCausalLM
 
 # Custom imports
 from config import LocalGRPOConfig
@@ -18,15 +19,9 @@ from utils import (
 def main(grpo_config, model_config):
     # Set seed for reproducibility
     set_random_seed(grpo_config.seed)
-
+    
     # Load dataset
     train_set = InjecAgentDataset(grpo_config.dataset)
-
-    # Add reward functions - right now this is only the InjecAgentToolCallingReward
-    reward_functions = [
-        ALL_REWARD_FUNCS[curr_func](grpo_config)
-        for curr_func in grpo_config.reward_functions
-    ]
 
     # Lora configuration
     if model_config.use_peft is True:
@@ -62,16 +57,44 @@ def main(grpo_config, model_config):
     else:
         grpo_config.model_init_kwargs["attn_implementation"] = "flash_attention_2"
 
+    # set gpus for each device
+    attack_device = "cuda:0"
+    target_device = "cuda:1"
+    
+    # load target model
+    target_model = AutoModelForCausalLM.from_pretrained(
+        grpo_config.target_model_name_or_path,
+        torch_dtype=torch.bfloat16,
+    )
+    target_model.to(target_device)
+    
+    # load attacker model
+    attacker_model = AutoModelForCausalLM.from_pretrained(
+        grpo_config.attacker_model_name_or_path,
+        torch_dtype=torch.bfloat16,
+    )
+    attacker_model.to(attack_device)
+    
+    # Add reward functions - right now this is only the InjecAgentToolCallingReward
+    reward_functions = [
+        ALL_REWARD_FUNCS[curr_func](grpo_config, target_model)
+        for curr_func in grpo_config.reward_functions
+    ]
+    
     # Initialize and run trainer
     trainer = GRPOTrainer(
         args=grpo_config,
-        model=grpo_config.attacker_model_name_or_path,
+        model=attacker_model,
         peft_config=peft_config,
-        reward_funcs=reward_functions,
+        reward_func=reward_functions[0],
         train_dataset=train_set,
     )
+    trainer.target_model = target_model
 
     trainer.train(resume_from_checkpoint=grpo_config.resume_from_checkpoint)
+    
+    # TODO: write own training loop so that we can call trainer.step for each model after computing the rewards together
+    
 
 
 if __name__ == "__main__":

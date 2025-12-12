@@ -127,20 +127,22 @@ def if_judge_success(judge_output):
 
 
 class InjecAgentToolCallingReward:
-    def __init__(self, config):
+    def __init__(self, config, target_model):
         """
         Sets up the OpenAI API endpoint for the model and loads the InjecAgent tools
         """
         self.__name__ = "InjecAgentToolCallingReward"
         self.config = config
+        self.target_model = target_model
 
         # Load all target models and tokenizers
-        self.all_target_model_name_or_path = config.target_model_name_or_path.split(";") # this is only one model for now
-        self.all_target_model_url = config.target_model_url.split(";")
-        self.all_target_client = []
-        self.all_target_tokenizer = []
+        # self.all_target_model_url = config.target_model_url.split(";")
+        # self.all_target_client = []
+        # self.all_target_tokenizer = []
+        self.all_target_model = [target_model]
+        self.target_tokenizer = AutoTokenizer.from_pretrained(config.target_model_name_or_path, trust_remote_code=True)
 
-        for i, model_name in enumerate(self.all_target_model_name_or_path):
+        # for i, model_name in enumerate(self.all_target_model_name_or_path):
             # if "/" not in model_name:
             #     # Azure API
             #     if "gpt" in model_name.lower():
@@ -177,17 +179,66 @@ class InjecAgentToolCallingReward:
             # TODO: switch this to something that is not OpenAI
             # this is where the target model is setup. assuming that we cannot train a model if we
             # are using the openai api endpoint + VLLM
-            client = OpenAI(base_url=self.all_target_model_url[i], api_key="EMPTY")
-            tokenizer = AutoTokenizer.from_pretrained(
-                model_name, trust_remote_code=True
-            )
+            # client = OpenAI(base_url=self.all_target_model_url[i], api_key="EMPTY")
+            # tokenizer = AutoTokenizer.from_pretrained(
+            #     model_name, trust_remote_code=True
+            # )
 
-            self.all_target_client.append(client)
-            self.all_target_tokenizer.append(tokenizer)
+            # self.all_target_client.append(None)
+            # self.all_target_tokenizer.append(tokenizer)
 
         self.tool_dict = injecagent_get_tool_dict()
         self.tool_dict_gpt = injecagent_get_tool_dict(gpt_format=True)
 
+    
+    def query_huggingface_text_batch(self, prompts, max_tokens=256, temperature=None):
+        """
+        Generate completions for a batch of prompts using a local Hugging Face model.
+        Mirrors the vLLM batch interface but via transformers.generate.
+        """
+        try:
+            enc = self.target_tokenizer(
+                prompts,
+                return_tensors="pt",
+                padding=True,
+                truncation=True,
+            )
+            input_ids = enc["input_ids"].to(self.target_model.device)
+            attention_mask = enc.get("attention_mask")
+            if attention_mask is not None:
+                attention_mask = attention_mask.to(self.target_model.device)
+
+            pad_id = self.target_tokenizer.pad_token_id if self.target_tokenizer.pad_token_id is not None else self.target_tokenizer.eos_token_id
+            gen_kwargs = {"max_new_tokens": max_tokens}
+            if temperature is not None:
+                gen_kwargs["do_sample"] = True
+                gen_kwargs["temperature"] = temperature
+            else:
+                gen_kwargs["do_sample"] = False
+
+            with torch.inference_mode():
+                outputs = self.target_model.generate(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                    pad_token_id=pad_id,
+                    eos_token_id=self.target_tokenizer.eos_token_id,
+                    **gen_kwargs,
+                )
+
+            if attention_mask is not None:
+                input_lengths = attention_mask.sum(dim=1).tolist()
+            else:
+                input_lengths = [input_ids.shape[1]] * input_ids.shape[0]
+
+            texts = []
+            for i in range(outputs.shape[0]):
+                gen_ids = outputs[i, input_lengths[i]:]
+                texts.append(self.target_tokenizer.decode(gen_ids, skip_special_tokens=True))
+            return texts
+        except Exception as e:
+            print(f"Error querying Hugging Face model (batch): {e}")
+            return [""] * len(prompts)
+    
     # TOOD: is max_tokens input or output, and where is that set?
     def query_vllm_text_batch(self, client, prompts, model_name, max_tokens=256, temperature=None):
         """
@@ -212,9 +263,9 @@ class InjecAgentToolCallingReward:
         """
         just sets up prompt template and calls function to query the llm model
         """
-        tokenizer = self.all_target_tokenizer[i]
-        client = self.all_target_client[i]
-        model_name = self.all_target_model_name_or_path[i]
+        # tokenizer = self.all_target_tokenizer[i]
+        # client = self.all_target_client[i]
+        # model_name = self.all_target_model_name_or_path[i]
 
         # if "secalign" in model_name.lower():
         #     # Specifically for InjecAgent
@@ -250,17 +301,23 @@ class InjecAgentToolCallingReward:
         #         return [""] * len(messages)
         #     return target_model_output_texts
         # else:
-        prompts = tokenizer.apply_chat_template(
+        messages = [
+            [
+                {"role": "system", "content": INJECAGENT_SYS_PROMPT},
+                {"role": "user", "content": user_input},
+            ]
+            for user_input in user_inputs
+        ]
+        prompts = self.target_tokenizer.apply_chat_template(
             messages, add_generation_prompt=True, tokenize=False
         )
-        # this is where we get the response from the vllm model
-        return self.query_vllm_text_batch(
-            client,
+
+        return self.query_huggingface_text_batch(
             prompts,
-            model_name,
             max_tokens=self.config.target_model_max_completion_length,
             temperature=self.config.target_model_temperature,
         )
+        
 
     def fetch_with_retries(
         self,
