@@ -136,11 +136,10 @@ class InjecAgentToolCallingReward:
         self.target_model = target_model
 
         # Load all target models and tokenizers
-        # self.all_target_model_url = config.target_model_url.split(";")
-        # self.all_target_client = []
-        # self.all_target_tokenizer = []
+        self.all_target_model_url = config.target_model_url.split(";")
+        self.all_target_client = [None]
+        self.all_target_tokenizer = [AutoTokenizer.from_pretrained(config.target_model_name_or_path, trust_remote_code=True)]
         self.all_target_model = [target_model]
-        self.target_tokenizer = AutoTokenizer.from_pretrained(config.target_model_name_or_path, trust_remote_code=True)
 
         # for i, model_name in enumerate(self.all_target_model_name_or_path):
             # if "/" not in model_name:
@@ -197,18 +196,20 @@ class InjecAgentToolCallingReward:
         Mirrors the vLLM batch interface but via transformers.generate.
         """
         try:
-            enc = self.target_tokenizer(
+            tokenizer = self.all_target_tokenizer[0]
+            model = self.all_target_model[0]
+            enc = tokenizer(
                 prompts,
                 return_tensors="pt",
                 padding=True,
                 truncation=True,
             )
-            input_ids = enc["input_ids"].to(self.target_model.device)
+            input_ids = enc["input_ids"].to(model.device)
             attention_mask = enc.get("attention_mask")
             if attention_mask is not None:
-                attention_mask = attention_mask.to(self.target_model.device)
+                attention_mask = attention_mask.to(model.device)
 
-            pad_id = self.target_tokenizer.pad_token_id if self.target_tokenizer.pad_token_id is not None else self.target_tokenizer.eos_token_id
+            pad_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else tokenizer.eos_token_id
             gen_kwargs = {"max_new_tokens": max_tokens}
             if temperature is not None:
                 gen_kwargs["do_sample"] = True
@@ -217,11 +218,11 @@ class InjecAgentToolCallingReward:
                 gen_kwargs["do_sample"] = False
 
             with torch.inference_mode():
-                outputs = self.target_model.generate(
+                outputs = model.generate(
                     input_ids=input_ids,
                     attention_mask=attention_mask,
                     pad_token_id=pad_id,
-                    eos_token_id=self.target_tokenizer.eos_token_id,
+                    eos_token_id=tokenizer.eos_token_id,
                     **gen_kwargs,
                 )
 
@@ -233,39 +234,39 @@ class InjecAgentToolCallingReward:
             texts = []
             for i in range(outputs.shape[0]):
                 gen_ids = outputs[i, input_lengths[i]:]
-                texts.append(self.target_tokenizer.decode(gen_ids, skip_special_tokens=True))
+                texts.append(self.tokenizer.decode(gen_ids, skip_special_tokens=True))
             return texts
         except Exception as e:
             print(f"Error querying Hugging Face model (batch): {e}")
             return [""] * len(prompts)
     
     # TOOD: is max_tokens input or output, and where is that set?
-    def query_vllm_text_batch(self, client, prompts, model_name, max_tokens=256, temperature=None):
-        """
-        queries the vllm and returns the response
-        """
-        try:
-            kwargs = {
-                "model": model_name,
-                "prompt": prompts,
-            }
-            if max_tokens is not None:
-                kwargs["max_tokens"] = max_tokens
-            if temperature is not None:
-                kwargs["temperature"] = temperature
-            response = client.completions.create(**kwargs)
-            return [choice.text for choice in response.choices]
-        except Exception as e:
-            print(f"Error querying vLLM (batch): {e}")
-            return [""] * len(prompts)
+    # def query_vllm_text_batch(self, client, prompts, model_name, max_tokens=256, temperature=None):
+    #     """
+    #     queries the vllm and returns the response
+    #     """
+    #     try:
+    #         kwargs = {
+    #             "model": model_name,
+    #             "prompt": prompts,
+    #         }
+    #         if max_tokens is not None:
+    #             kwargs["max_tokens"] = max_tokens
+    #         if temperature is not None:
+    #             kwargs["temperature"] = temperature
+    #         response = client.completions.create(**kwargs)
+    #         return [choice.text for choice in response.choices]
+    #     except Exception as e:
+    #         print(f"Error querying vLLM (batch): {e}")
+    #         return [""] * len(prompts)
 
     def run_target_model(self, i, user_inputs):
         """
         just sets up prompt template and calls function to query the llm model
         """
-        # tokenizer = self.all_target_tokenizer[i]
-        # client = self.all_target_client[i]
-        # model_name = self.all_target_model_name_or_path[i]
+        tokenizer = self.all_target_tokenizer[i]
+        client = self.all_target_client[i]
+        model_name = self.all_target_model_name_or_path[i]
 
         # if "secalign" in model_name.lower():
         #     # Specifically for InjecAgent
@@ -308,7 +309,7 @@ class InjecAgentToolCallingReward:
             ]
             for user_input in user_inputs
         ]
-        prompts = self.target_tokenizer.apply_chat_template(
+        prompts = tokenizer.apply_chat_template(
             messages, add_generation_prompt=True, tokenize=False
         )
 
@@ -386,6 +387,7 @@ class InjecAgentToolCallingReward:
         """
         queries the target model, keeps the returned text output and tool calls in list
         """
+        print("ahhhh running run_gpt_target_model oh no")
         client = self.all_target_client[i]
         model_name = self.all_target_model_name_or_path[i]
         with ThreadPoolExecutor(max_workers=len(user_inputs)) as executor:
@@ -422,8 +424,6 @@ class InjecAgentToolCallingReward:
         
         Returns:
            rewards (List[float]): list of reward values 
-        
-        TODO: figure out what goes on here
         """
         
         # gather adversarial goals and prompts from the passed in prompts and completions
