@@ -214,8 +214,11 @@ class InjecAgentToolCallingReward:
                 return_tensors="pt",
                 padding=True,
                 truncation=True,
+                max_length=8192,
             )
             input_ids = enc["input_ids"].to(model.device)
+            print(f"DEBUG: Input token length: {enc['input_ids'].shape[1]}")
+            print(f"DEBUG: Tokenizer default max length: {tokenizer.model_max_length}")
             attention_mask = enc.get("attention_mask")
             if attention_mask is not None:
                 attention_mask = attention_mask.to(model.device)
@@ -327,7 +330,7 @@ class InjecAgentToolCallingReward:
             messages, add_generation_prompt=True, tokenize=False
         )
         
-        print(f"run_target_model: first message: {messages[0]}")
+        # print(f"run_target_model: first message: {messages[0]}")
 
         return self.query_huggingface_text_batch(
             prompts,
@@ -548,7 +551,7 @@ class InjecAgentToolCallingReward:
 
             all_outputs = [f.result() for f in futures]
         
-        print(f"first output (step 1): {all_outputs[0][0]}")
+        # print(f"first output (step 1): {all_outputs[0][0]}")
 
         # Step 2: Judge evaluation
         rewards = [0.0] * len(prompts)
@@ -574,13 +577,13 @@ class InjecAgentToolCallingReward:
 
                 judge_model_output = eval_result["eval"]
                 
-                if i == j == 0:
-                    print(f"curr_data_row[Attacker Tools]: {curr_data_row['Attacker Tools']}")
-                    print(f"curr_data_row[User Tool]: {curr_data_row['User Tool']}")
-                    print(f"adv_prompts[i]: {adv_prompts[i]}")
-                    print(f"curr_row: {curr_row}")
-                    print(f"eval result: {eval_result}")
-                    print(f"Judge model output: {judge_model_output}")
+                # if i == j == 0:
+                    # print(f"curr_data_row[Attacker Tools]: {curr_data_row['Attacker Tools']}")
+                    # print(f"curr_data_row[User Tool]: {curr_data_row['User Tool']}")
+                    # print(f"adv_prompts[i]: {adv_prompts[i]}")
+                    # print(f"curr_row: {curr_row}")
+                    # print(f"eval result: {eval_result}")
+                    # print(f"Judge model output: {judge_model_output}")
 
                 if judge_model_output == "succ":
                     if self.config.model_wise_reward_weights is not None:
