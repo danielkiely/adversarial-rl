@@ -5,16 +5,15 @@ set -e
 export WANDB_PROJECT="Adversarial-RL"
 
 LR=1e-5
-RUN_NAME=adv_rl_llama_3_2_3b_instruct_lora
+RUN_NAME=adv_rl_llama_3_2_1b_instruct_lora
 
-ATTACKER_MODEL_NAME_OR_PATH=meta-llama/Llama-3.2-3B-Instruct
-TARGET_MODEL_NAME_OR_PATH=meta-llama/Llama-3.2-3B-Instruct
+ATTACKER_MODEL_NAME_OR_PATH=meta-llama/Llama-3.2-1B-Instruct
+TARGET_MODEL_NAME_OR_PATH=meta-llama/Llama-3.2-1B-Instruct
 
 echo "starting training"
-
-export CUDA_VISIBLE_DEVICES=0,1,2,3
-accelerate launch \
-    train.py \
+export CUDA_VISIBLE_DEVICES=0,1
+# no more accelerate :(
+python train.py \
     --attacker_model_name_or_path ${ATTACKER_MODEL_NAME_OR_PATH} \
     --target_model_name_or_path ${TARGET_MODEL_NAME_OR_PATH} \
     --reward_functions InjecAgentToolCallingReward \
