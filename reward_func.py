@@ -566,6 +566,13 @@ class InjecAgentToolCallingReward:
                     )
 
                 judge_model_output = eval_result["eval"]
+                
+                if i == j == 0:
+                    print(f"curr_data_row[Attacker Tools]: {curr_data_row['Attacker Tools']}")
+                    print(f"curr_data_row[User Tool]: {curr_data_row['User Tool']}")
+                    print(f"adv_prompts[i]: {adv_prompts[i]}")
+                    print(f"curr_row: {curr_row}")
+                    print(f"Judge model output: {judge_model_output}")
 
                 if judge_model_output == "succ":
                     if self.config.model_wise_reward_weights is not None:
