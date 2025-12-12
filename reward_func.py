@@ -150,58 +150,10 @@ class InjecAgentToolCallingReward:
             else:
                 tok.add_special_tokens({"pad_token": "[PAD]"})
         self.all_target_model[0].config.pad_token_id = tok.pad_token_id
-        
-
-        # for i, model_name in enumerate(self.all_target_model_name_or_path):
-            # if "/" not in model_name:
-            #     # Azure API
-            #     if "gpt" in model_name.lower():
-            #         env_name = model_name.upper().replace("-", "_")
-            #         api_version = os.environ[f"{env_name}_AZURE_API_VERSION"]
-            #         api_key = os.environ[f"{env_name}_API_KEY"]
-            #         endpoint = os.environ[f"{env_name}_ENDPOINT"]
-            #         endpoint = f"https://{endpoint}"
-            #         model_name = f"{model_name}"
-            #         client = AzureOpenAI(
-            #             api_version=api_version,
-            #             api_key=api_key,
-            #             azure_endpoint=endpoint,
-            #         )
-            #     elif "gemini" in model_name.lower():
-            #         api_key = os.environ["GEMINI_API_KEY"]
-            #         model_name = f"{model_name}"
-            #         client = OpenAI(
-            #             api_key=api_key,
-            #             base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-            #         )
-            #     elif "anthropic" in model_name.lower():
-            #         client = AnthropicBedrock(
-            #             aws_access_key=os.environ["AWS_ACCESS_KEY_ID"],
-            #             aws_secret_key=os.environ["AWS_SECRET_ACCESS_KEY"],
-            #             aws_session_token=os.environ["AWS_SESSION_TOKEN"],
-            #             aws_region=os.environ["AWS_REGION"],
-            #         )
-            #     else:
-            #         raise ValueError(f"Unsupported target model: {model_name}")
-            #     tokenizer = None
-            # else:
-            
-            # TODO: switch this to something that is not OpenAI
-            # this is where the target model is setup. assuming that we cannot train a model if we
-            # are using the openai api endpoint + VLLM
-            # client = OpenAI(base_url=self.all_target_model_url[i], api_key="EMPTY")
-            # tokenizer = AutoTokenizer.from_pretrained(
-            #     model_name, trust_remote_code=True
-            # )
-
-            # self.all_target_client.append(None)
-            # self.all_target_tokenizer.append(tokenizer)
 
         self.tool_dict = injecagent_get_tool_dict()
         self.tool_dict_gpt = injecagent_get_tool_dict(gpt_format=True)
 
-    
-    
     
     def query_huggingface_text_batch(self, prompts, max_tokens=256, temperature=None):
         """
