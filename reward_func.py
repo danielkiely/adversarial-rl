@@ -246,7 +246,10 @@ class InjecAgentToolCallingReward:
             for i in range(outputs.shape[0]):
                 gen_ids = outputs[i, input_lengths[i]:]
                 texts.append(tokenizer.decode(gen_ids, skip_special_tokens=True))
+            
+            print(f"query_huggingface_text_batch: \n prompt recieved: {prompts[0]} \n text outputted: {texts[0]}'")
             return texts
+        
         except Exception as e:
             print(f"Error querying Hugging Face model (batch): {e}")
             return [""] * len(prompts)
@@ -323,6 +326,8 @@ class InjecAgentToolCallingReward:
         prompts = tokenizer.apply_chat_template(
             messages, add_generation_prompt=True, tokenize=False
         )
+        
+        print(f"run_target_model: first message: {messages[0]}")
 
         return self.query_huggingface_text_batch(
             prompts,
@@ -542,6 +547,8 @@ class InjecAgentToolCallingReward:
                     )
 
             all_outputs = [f.result() for f in futures]
+        
+        print(f"first output (step 1): {all_outputs[0][0]}")
 
         # Step 2: Judge evaluation
         rewards = [0.0] * len(prompts)
@@ -572,6 +579,7 @@ class InjecAgentToolCallingReward:
                     print(f"curr_data_row[User Tool]: {curr_data_row['User Tool']}")
                     print(f"adv_prompts[i]: {adv_prompts[i]}")
                     print(f"curr_row: {curr_row}")
+                    print(f"eval result: {eval_result}")
                     print(f"Judge model output: {judge_model_output}")
 
                 if judge_model_output == "succ":
