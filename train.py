@@ -6,6 +6,7 @@
 from trl import TrlParser, ModelConfig, GRPOTrainer
 from peft import LoraConfig
 from transformers import AutoModelForCausalLM
+import torch
 
 # Custom imports
 from config import LocalGRPOConfig
@@ -86,7 +87,7 @@ def main(grpo_config, model_config):
         args=grpo_config,
         model=attacker_model,
         peft_config=peft_config,
-        reward_func=reward_functions[0],
+        reward_funcs=reward_functions,
         train_dataset=train_set,
     )
     trainer.target_model = target_model
