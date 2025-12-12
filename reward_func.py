@@ -201,6 +201,8 @@ class InjecAgentToolCallingReward:
         self.tool_dict_gpt = injecagent_get_tool_dict(gpt_format=True)
 
     
+    
+    
     def query_huggingface_text_batch(self, prompts, max_tokens=256, temperature=None):
         """
         Generate completions for a batch of prompts using a local Hugging Face model.
@@ -240,14 +242,13 @@ class InjecAgentToolCallingReward:
                     **gen_kwargs,
                 )
 
-            if attention_mask is not None:
-                input_lengths = attention_mask.sum(dim=1).tolist()
-            else:
-                input_lengths = [input_ids.shape[1]] * input_ids.shape[0]
-
+            # Since we are using left padding, the generated sequence starts
+            # with the full padded input of fixed length input_ids.shape[1].
+            # We slice from this position onward to get only new tokens.
+            seq_len = input_ids.shape[1]
             texts = []
             for i in range(outputs.shape[0]):
-                gen_ids = outputs[i, input_lengths[i]:]
+                gen_ids = outputs[i, seq_len:]
                 texts.append(tokenizer.decode(gen_ids, skip_special_tokens=True))
             
             print(f"query_huggingface_text_batch: \n prompt recieved: {prompts[0]} \n text outputted: {texts[0]}'")
@@ -576,6 +577,15 @@ class InjecAgentToolCallingReward:
                     )
 
                 judge_model_output = eval_result["eval"]
+
+                # Debugging: show why a sample did not get a successful judge label
+                # Only print for a small number of samples/models to avoid excessive logs.
+                if judge_model_output != "succ" and i < 5 and j == 0:
+                    invalid_reason = eval_result.get("invalid_reason", None)
+                    print(
+                        f"[RewardDebug] sample={i}, model_idx={j}, eval={judge_model_output}, "
+                        f"invalid_reason={invalid_reason}"
+                    )
                 
                 # if i == j == 0:
                     # print(f"curr_data_row[Attacker Tools]: {curr_data_row['Attacker Tools']}")
@@ -600,6 +610,11 @@ class InjecAgentToolCallingReward:
                 )
                 is False
             ):
+                if rewards[i] != 0.0 and i < 5:
+                    print(
+                        f"[RewardDebug] sample={i}: attack_prompt_format_reward failed; "
+                        f"zeroing reward (was {rewards[i]})"
+                    )
                 rewards[i] = 0.0
             elif self.config.soft_rewards:
                 rewards[i] = rewards[i] / total_votes
