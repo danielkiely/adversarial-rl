@@ -127,30 +127,29 @@ def if_judge_success(judge_output):
 
 
 class InjecAgentToolCallingReward:
-    def __init__(self, config, pipeline):
+    def __init__(self, config, target_model):
         """
         Sets up the OpenAI API endpoint for the model and loads the InjecAgent tools
         """
         self.__name__ = "InjecAgentToolCallingReward"
         self.config = config
-        # self.target_model = target_model
-        self.pipeline = pipeline
+        self.target_model = target_model
 
         # Load all target models and tokenizers
         self.all_target_model_url = config.target_model_url.split(";")
         self.all_target_model_name_or_path = config.target_model_name_or_path.split(";")
         self.all_target_client = [None]
         self.all_target_tokenizer = [AutoTokenizer.from_pretrained(config.target_model_name_or_path, trust_remote_code=True)]
-        self.all_target_pipeline = [pipeline]
+        self.all_target_model = [target_model]
         
-        # tok = self.all_target_tokenizer[0]
-        # tok.padding_side = "left"  # optional but recommended for batched causal LM
-        # if tok.pad_token_id is None:
-        #     if tok.eos_token is not None:
-        #         tok.pad_token = tok.eos_token
-        #     else:
-        #         tok.add_special_tokens({"pad_token": "[PAD]"})
-        # self.all_target_model[0].config.pad_token_id = tok.pad_token_id
+        tok = self.all_target_tokenizer[0]
+        tok.padding_side = "left"  # optional but recommended for batched causal LM
+        if tok.pad_token_id is None:
+            if tok.eos_token is not None:
+                tok.pad_token = tok.eos_token
+            else:
+                tok.add_special_tokens({"pad_token": "[PAD]"})
+        self.all_target_model[0].config.pad_token_id = tok.pad_token_id
         
 
         # for i, model_name in enumerate(self.all_target_model_name_or_path):
@@ -202,8 +201,6 @@ class InjecAgentToolCallingReward:
         self.tool_dict_gpt = injecagent_get_tool_dict(gpt_format=True)
 
     
-    def query_llama(self, prompts):
-        return self.pipeline(prompts)
     
     
     def query_huggingface_text_batch(self, prompts, max_tokens=256, temperature=None):
@@ -222,8 +219,6 @@ class InjecAgentToolCallingReward:
                 max_length=8192,
             )
             input_ids = enc["input_ids"].to(model.device)
-            print(f"DEBUG: Input token length: {enc['input_ids'].shape[1]}")
-            print(f"DEBUG: Tokenizer default max length: {tokenizer.model_max_length}")
             attention_mask = enc.get("attention_mask")
             if attention_mask is not None:
                 attention_mask = attention_mask.to(model.device)
@@ -254,32 +249,33 @@ class InjecAgentToolCallingReward:
                 gen_ids = outputs[i, seq_len:]
                 texts.append(tokenizer.decode(gen_ids, skip_special_tokens=True))
             
-            print(f"query_huggingface_text_batch: \n prompt recieved: {prompts[0]} \n text outputted: {texts[0]}'")
+            print(f"query_huggingface_text_batch():text outputted: {texts[0]}")
             return texts
         
         except Exception as e:
             print(f"Error querying Hugging Face model (batch): {e}")
             return [""] * len(prompts)
     
-    # TOOD: is max_tokens input or output, and where is that set?
-    # def query_vllm_text_batch(self, client, prompts, model_name, max_tokens=256, temperature=None):
-    #     """
-    #     queries the vllm and returns the response
-    #     """
-    #     try:
-    #         kwargs = {
-    #             "model": model_name,
-    #             "prompt": prompts,
-    #         }
-    #         if max_tokens is not None:
-    #             kwargs["max_tokens"] = max_tokens
-    #         if temperature is not None:
-    #             kwargs["temperature"] = temperature
-    #         response = client.completions.create(**kwargs)
-    #         return [choice.text for choice in response.choices]
-    #     except Exception as e:
-    #         print(f"Error querying vLLM (batch): {e}")
-    #         return [""] * len(prompts)
+    def query_vllm_text_batch(self, client, prompts, model_name, max_tokens=256, temperature=None):
+        """
+        queries the vllm and returns the response
+        """
+        try:
+            kwargs = {
+                "model": model_name,
+                "prompt": prompts,
+            }
+            if max_tokens is not None:
+                kwargs["max_tokens"] = max_tokens
+            if temperature is not None:
+                kwargs["temperature"] = temperature
+            response = client.completions.create(**kwargs)
+            dummy =  [choice.text for choice in response.choices]
+            print(f"query_vllm_text_batch():text outputted: {dummy[0]}")
+            return dummy
+        except Exception as e:
+            print(f"Error querying vLLM (batch): {e}")
+            return [""] * len(prompts)
 
     def run_target_model(self, i, user_inputs):
         """
@@ -289,40 +285,6 @@ class InjecAgentToolCallingReward:
         client = self.all_target_client[i]
         model_name = self.all_target_model_name_or_path[i]
 
-        # if "secalign" in model_name.lower():
-        #     # Specifically for InjecAgent
-        #     messages = [
-        #         [
-        #             {"role": "user", "content": INJECAGENT_SYS_PROMPT},
-        #             {"role": "input", "content": user_input},
-        #         ]
-        #         for user_input in user_inputs
-        #     ]
-        # else:
-        #     messages = [
-        #         [
-        #             {"role": "system", "content": INJECAGENT_SYS_PROMPT},
-        #             {"role": "user", "content": user_input},
-        #         ]
-        #         for user_input in user_inputs
-        #     ]
-
-        # if "/" not in model_name or "anthropic" in model_name.lower():
-        #     # User default system promopt for API models
-        #     try:
-        #         target_model_outputs = client(messages=messages)
-        #         target_model_output_texts = [
-        #             output.choices[0].message.content for output in target_model_outputs
-        #         ]
-        #         for i in range(len(target_model_output_texts)):
-        #             if target_model_output_texts[i] is None:
-        #                 # Gemini API sometimes returns None
-        #                 target_model_output_texts[i] = ""
-        #     except Exception as e:
-        #         print(f"Error querying Azure (batch): {e}")
-        #         return [""] * len(messages)
-        #     return target_model_output_texts
-        # else:
         messages = [
             [
                 {"role": "system", "content": INJECAGENT_SYS_PROMPT},
@@ -333,16 +295,12 @@ class InjecAgentToolCallingReward:
         prompts = tokenizer.apply_chat_template(
             messages, add_generation_prompt=True, tokenize=False
         )
-        
-        # print(f"run_target_model: first message: {messages[0]}")
-        
-        return self.query_llama(prompts)
 
-        # return self.query_huggingface_text_batch(
-        #     prompts,
-        #     max_tokens=self.config.target_model_max_completion_length,
-        #     temperature=self.config.target_model_temperature,
-        # )
+        return self.query_huggingface_text_batch(
+            prompts,
+            max_tokens=self.config.target_model_max_completion_length,
+            temperature=self.config.target_model_temperature,
+        )
         
 
     def fetch_with_retries(
@@ -556,8 +514,6 @@ class InjecAgentToolCallingReward:
                     )
 
             all_outputs = [f.result() for f in futures]
-        
-        # print(f"first output (step 1): {all_outputs[0][0]}")
 
         # Step 2: Judge evaluation
         rewards = [0.0] * len(prompts)
@@ -591,14 +547,6 @@ class InjecAgentToolCallingReward:
                         f"[RewardDebug] sample={i}, model_idx={j}, eval={judge_model_output}, "
                         f"invalid_reason={invalid_reason}"
                     )
-                
-                # if i == j == 0:
-                    # print(f"curr_data_row[Attacker Tools]: {curr_data_row['Attacker Tools']}")
-                    # print(f"curr_data_row[User Tool]: {curr_data_row['User Tool']}")
-                    # print(f"adv_prompts[i]: {adv_prompts[i]}")
-                    # print(f"curr_row: {curr_row}")
-                    # print(f"eval result: {eval_result}")
-                    # print(f"Judge model output: {judge_model_output}")
 
                 if judge_model_output == "succ":
                     if self.config.model_wise_reward_weights is not None:
@@ -609,7 +557,12 @@ class InjecAgentToolCallingReward:
         # Step 3: Reward aggregation
         total_votes = len(self.all_target_client)
         for i in range(len(prompts)):
-            if (attack_prompt_format_reward(prompts[i][0]["content"], completions[i][0]["content"]) is False):
+            if (
+                attack_prompt_format_reward(
+                    prompts[i][0]["content"], completions[i][0]["content"]
+                )
+                is False
+            ):
                 if rewards[i] != 0.0 and i < 5:
                     print(
                         f"[RewardDebug] sample={i}: attack_prompt_format_reward failed; "
