@@ -127,29 +127,30 @@ def if_judge_success(judge_output):
 
 
 class InjecAgentToolCallingReward:
-    def __init__(self, config, target_model):
+    def __init__(self, config, pipeline):
         """
         Sets up the OpenAI API endpoint for the model and loads the InjecAgent tools
         """
         self.__name__ = "InjecAgentToolCallingReward"
         self.config = config
-        self.target_model = target_model
+        # self.target_model = target_model
+        self.pipeline = pipeline
 
         # Load all target models and tokenizers
         self.all_target_model_url = config.target_model_url.split(";")
         self.all_target_model_name_or_path = config.target_model_name_or_path.split(";")
         self.all_target_client = [None]
         self.all_target_tokenizer = [AutoTokenizer.from_pretrained(config.target_model_name_or_path, trust_remote_code=True)]
-        self.all_target_model = [target_model]
+        self.all_target_pipeline = [pipeline]
         
-        tok = self.all_target_tokenizer[0]
-        tok.padding_side = "left"  # optional but recommended for batched causal LM
-        if tok.pad_token_id is None:
-            if tok.eos_token is not None:
-                tok.pad_token = tok.eos_token
-            else:
-                tok.add_special_tokens({"pad_token": "[PAD]"})
-        self.all_target_model[0].config.pad_token_id = tok.pad_token_id
+        # tok = self.all_target_tokenizer[0]
+        # tok.padding_side = "left"  # optional but recommended for batched causal LM
+        # if tok.pad_token_id is None:
+        #     if tok.eos_token is not None:
+        #         tok.pad_token = tok.eos_token
+        #     else:
+        #         tok.add_special_tokens({"pad_token": "[PAD]"})
+        # self.all_target_model[0].config.pad_token_id = tok.pad_token_id
         
 
         # for i, model_name in enumerate(self.all_target_model_name_or_path):
@@ -201,6 +202,8 @@ class InjecAgentToolCallingReward:
         self.tool_dict_gpt = injecagent_get_tool_dict(gpt_format=True)
 
     
+    def query_llama(self, prompts):
+        return self.pipeline(prompts)
     
     
     def query_huggingface_text_batch(self, prompts, max_tokens=256, temperature=None):
@@ -332,12 +335,14 @@ class InjecAgentToolCallingReward:
         )
         
         # print(f"run_target_model: first message: {messages[0]}")
+        
+        return self.query_llama(prompts)
 
-        return self.query_huggingface_text_batch(
-            prompts,
-            max_tokens=self.config.target_model_max_completion_length,
-            temperature=self.config.target_model_temperature,
-        )
+        # return self.query_huggingface_text_batch(
+        #     prompts,
+        #     max_tokens=self.config.target_model_max_completion_length,
+        #     temperature=self.config.target_model_temperature,
+        # )
         
 
     def fetch_with_retries(
@@ -604,12 +609,7 @@ class InjecAgentToolCallingReward:
         # Step 3: Reward aggregation
         total_votes = len(self.all_target_client)
         for i in range(len(prompts)):
-            if (
-                attack_prompt_format_reward(
-                    prompts[i][0]["content"], completions[i][0]["content"]
-                )
-                is False
-            ):
+            if (attack_prompt_format_reward(prompts[i][0]["content"], completions[i][0]["content"]) is False):
                 if rewards[i] != 0.0 and i < 5:
                     print(
                         f"[RewardDebug] sample={i}: attack_prompt_format_reward failed; "

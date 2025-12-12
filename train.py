@@ -63,11 +63,11 @@ def main(grpo_config, model_config):
     target_device = "cuda:1"
     
     # load target model
-    target_model = AutoModelForCausalLM.from_pretrained(
-        grpo_config.target_model_name_or_path,
-        torch_dtype=torch.bfloat16,
-    )
-    target_model.to(target_device)
+    # target_model = AutoModelForCausalLM.from_pretrained(
+    #     grpo_config.target_model_name_or_path,
+    #     torch_dtype=torch.bfloat16,
+    # )
+    # target_model.to(target_device)
     
     grpo_config.model_name_or_path = grpo_config.attacker_model_name_or_path
     grpo_config.model_init_kwargs["device_map"] = {"": 0}  # put attacker model on cuda:0
@@ -80,8 +80,21 @@ def main(grpo_config, model_config):
     # attacker_model.to(attack_device)
     
     # Add reward functions - right now this is only the InjecAgentToolCallingReward
+    
+    
+    tokenizer = transformers.AutoTokenizer.from_pretrained(grpo_config.target_model_name_or_path)
+    pipeline = transformers.pipeline(
+        "text-generation",
+        model=grpo_config.target_model_name_or_path,
+        tokenizer=tokenizer,
+        torch_dtype=torch.bfloat16,
+        max_length=8192,
+        do_sample=False, # temperature=0
+        eos_token_id=tokenizer.eos_token_id,
+    ).to(target_device)
+    
     reward_functions = [
-        ALL_REWARD_FUNCS[curr_func](grpo_config, target_model)
+        ALL_REWARD_FUNCS[curr_func](grpo_config, pipeline)
         for curr_func in grpo_config.reward_functions
     ]
     
