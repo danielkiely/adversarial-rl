@@ -137,6 +137,7 @@ class InjecAgentToolCallingReward:
 
         # Load all target models and tokenizers
         self.all_target_model_url = config.target_model_url.split(";")
+        self.all_target_model_name_or_path = config.target_model_name_or_path.split(";")
         self.all_target_client = [None]
         self.all_target_tokenizer = [AutoTokenizer.from_pretrained(config.target_model_name_or_path, trust_remote_code=True)]
         self.all_target_model = [target_model]
