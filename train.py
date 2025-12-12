@@ -106,7 +106,7 @@ def main(grpo_config, model_config):
         reward_funcs=reward_functions,
         train_dataset=train_set,
     )
-    trainer.target_model = target_model
+    # trainer.target_model = target_model
 
     trainer.train(resume_from_checkpoint=grpo_config.resume_from_checkpoint)
     
