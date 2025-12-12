@@ -140,6 +140,16 @@ class InjecAgentToolCallingReward:
         self.all_target_client = [None]
         self.all_target_tokenizer = [AutoTokenizer.from_pretrained(config.target_model_name_or_path, trust_remote_code=True)]
         self.all_target_model = [target_model]
+        
+        tok = self.all_target_tokenizer[0]
+        tok.padding_side = "left"  # optional but recommended for batched causal LM
+        if tok.pad_token_id is None:
+            if tok.eos_token is not None:
+                tok.pad_token = tok.eos_token
+            else:
+                tok.add_special_tokens({"pad_token": "[PAD]"})
+        self.all_target_model[0].config.pad_token_id = tok.pad_token_id
+        
 
         # for i, model_name in enumerate(self.all_target_model_name_or_path):
             # if "/" not in model_name:
@@ -234,7 +244,7 @@ class InjecAgentToolCallingReward:
             texts = []
             for i in range(outputs.shape[0]):
                 gen_ids = outputs[i, input_lengths[i]:]
-                texts.append(self.tokenizer.decode(gen_ids, skip_special_tokens=True))
+                texts.append(tokenizer.decode(gen_ids, skip_special_tokens=True))
             return texts
         except Exception as e:
             print(f"Error querying Hugging Face model (batch): {e}")

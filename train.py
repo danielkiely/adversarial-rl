@@ -69,12 +69,15 @@ def main(grpo_config, model_config):
     )
     target_model.to(target_device)
     
+    grpo_config.model_name_or_path = grpo_config.attacker_model_name_or_path
+    grpo_config.model_init_kwargs["device_map"] = {"": 0}  # put attacker model on cuda:0
+    
     # load attacker model
-    attacker_model = AutoModelForCausalLM.from_pretrained(
-        grpo_config.attacker_model_name_or_path,
-        torch_dtype=torch.bfloat16,
-    )
-    attacker_model.to(attack_device)
+    # attacker_model = AutoModelForCausalLM.from_pretrained(
+    #     grpo_config.attacker_model_name_or_path,
+    #     torch_dtype=torch.bfloat16,
+    # )
+    # attacker_model.to(attack_device)
     
     # Add reward functions - right now this is only the InjecAgentToolCallingReward
     reward_functions = [
@@ -85,7 +88,6 @@ def main(grpo_config, model_config):
     # Initialize and run trainer
     trainer = GRPOTrainer(
         args=grpo_config,
-        model=attacker_model,
         peft_config=peft_config,
         reward_funcs=reward_functions,
         train_dataset=train_set,
