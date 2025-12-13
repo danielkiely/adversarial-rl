@@ -17,6 +17,9 @@ class LocalGRPOConfig(GRPOConfig):
     attacker_model_name_or_path: Optional[str] = field(
         default="meta-llama/Llama-3.2-1B-Instruct"
     )
+    defender_model_name_or_path: Optional[str] = field(
+        default="meta-llama/Llama-3.2-1B-Instruct"
+    )
     model_dtype: Optional[str] = field(default="bfloat16")
     target_model_name_or_path: Optional[str] = field(default="")
     max_completion_length: int = field(default=1024)

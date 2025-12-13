@@ -95,7 +95,7 @@ def main(grpo_config, model_config):
         # TODO: make sure wandb works for both models
         
         # shuffle the dataset at start of each round
-        train_set.shuffle()
+        # train_set.shuffle()
         
         # load frozen opponent and put on gpus 2, 3
         defender_frozen = AutoModelForCausalLM.from_pretrained(
