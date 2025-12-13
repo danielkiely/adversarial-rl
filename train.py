@@ -92,9 +92,10 @@ def main(grpo_config, model_config):
     defender_checkpoint = grpo_config.defender_model_name_or_path
     
     for i in range(rounds):
-        # TODO: tear down old models using nlp code
         # TODO: make sure wandb works for both models
-        # TODO: shuffle the dataset at start of each round
+        
+        # shuffle the dataset at start of each round
+        train_set.shuffle()
         
         # load frozen opponent and put on gpus 2, 3
         defender_frozen = AutoModelForCausalLM.from_pretrained(
@@ -122,7 +123,7 @@ def main(grpo_config, model_config):
         
         # save attacker state
         # TODO: make the checkpoint directory
-        attacker_checkpoint = f".../attacker_round_{i}"
+        attacker_checkpoint = f"adv_rl_checkpoints/attacker_round_{i}"
         attack_trainer.save_model(attacker_checkpoint)
         
         # cleanup models
@@ -153,7 +154,7 @@ def main(grpo_config, model_config):
         defend_trainer.train()
 
         # save defender state
-        defender_checkpoint = f".../defender_round_{i}"
+        defender_checkpoint = f"adv_rl_checkpoints/defender_round_{i}"
         defend_trainer.save_model(defender_checkpoint)
         
         # cleanup models
