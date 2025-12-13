@@ -57,36 +57,36 @@ def main(grpo_config, model_config):
         )
     else:
         grpo_config.model_init_kwargs["attn_implementation"] = "flash_attention_2"
+        
+        
+    # clean up old models
+    def cleanup_model(*models):
+        """
+        Free GPU memory by deleting models and clearing cache.
 
-    # load target model
-    target_model = AutoModelForCausalLM.from_pretrained(
-        grpo_config.target_model_name_or_path,
-        torch_dtype=torch.bfloat16,
-    )
+        Usage: cleanup_model(trainer, model) or cleanup_model(shaped_trainer)
+        """
+        for m in models:
+            if m is not None:
+                try:
+                    # If it's a trainer, get the model
+                    if hasattr(m, 'model'):
+                        del m.model
+                    del m
+                except:
+                    pass
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
+        print("GPU memory cleared!")
     
-    grpo_config.model_name_or_path = grpo_config.attacker_model_name_or_path
-    grpo_config.model_init_kwargs["device_map"] = {"": 0}  # put attacker model on cuda:0
+    def set_device_map_grpo(model_name_or_path):
+        grpo_config.model_name_or_path = model_name_or_path
+        grpo_config.model_init_kwargs["device_map"] = "auto"
+        grpo_config.model_init_kwargs["max_memory"] = {0: "24.0GB", 1: "24.0GB"}
+    
 
-    attack_trainer = GRPOTrainer(
-        args=grpo_config,
-        model=grpo_config.attacker_model_name_or_path,
-        peft_config=peft_config,
-        reward_funcs=[ALL_REWARD_FUNCS["InjecAgentToolCallingReward"](grpo_config, target_model, "attacker")],
-        train_dataset=train_set,
-        use_vllm=True,
-        vllm_mode="colocate",
-    )
-    
-    defend_trainer = GRPOTrainer(
-        args=grpo_config,
-        model=grpo_config.defender_model_name_or_path,
-        peft_config=peft_config,
-        reward_funcs=[ALL_REWARD_FUNCS["InjecAgentToolCallingReward"](grpo_config, target_model, "defender")],
-        train_dataset=train_set,
-        use_vllm=True,
-        vllm_mode="colocate"
-    )
-    
     rounds = 2
     attacker_checkpoint = grpo_config.attacker_model_name_or_path
     defender_checkpoint = grpo_config.defender_model_name_or_path
@@ -94,42 +94,70 @@ def main(grpo_config, model_config):
     for i in range(rounds):
         # TODO: tear down old models using nlp code
         # TODO: make sure wandb works for both models
-        # load frozen opponent
-        defender_frozen = AutoModelForCausalLM.from_pretrained(defender_checkpoint)
+        # TODO: shuffle the dataset at start of each round
+        
+        # load frozen opponent and put on gpus 2, 3
+        defender_frozen = AutoModelForCausalLM.from_pretrained(
+            defender_checkpoint,
+            torch_dtype=torch.bfloat16,
+            device_map="auto",
+            max_memory={2: "24.0GB", 3: "24.0GB"},
+        )
+        # frozen model only used for inference
         defender_frozen.eval()
         defender_frozen.requires_grad_(False)
+        
+        # put attacker model on gpus 0, 1
+        set_device_map_grpo(attacker_checkpoint)
 
         # train attacker
         attack_trainer = GRPOTrainer(
             args=grpo_config,
             model=attacker_checkpoint,
             peft_config=peft_config,
-            reward_funcs=[AttackerReward(defender_frozen)],
+            reward_funcs=[ALL_REWARD_FUNCS["InjecAgentToolCallingReward"](grpo_config, defender_frozen, "attacker")],
             train_dataset=train_set,
         )
         attack_trainer.train()
-
+        
         # save attacker state
+        # TODO: make the checkpoint directory
         attacker_checkpoint = f".../attacker_round_{i}"
         attack_trainer.save_model(attacker_checkpoint)
+        
+        # cleanup models
+        cleanup_model(attack_trainer, defender_frozen)
 
-        # load frozen attacker
-        attacker_frozen = AutoModelForCausalLM.from_pretrained(attacker_checkpoint)
+        # load frozen attacker on gpus 2, 3
+        attacker_frozen = AutoModelForCausalLM.from_pretrained(
+            attacker_checkpoint,
+            torch_dtype=torch.bfloat16,
+            device_map="auto",
+            max_memory={2: "24.0GB", 3: "24.0GB"},
+        )
+        # frozen model only used for inference
         attacker_frozen.eval()
         attacker_frozen.requires_grad_(False)
+        
+        # put defender on gpus 0, 1
+        set_device_map_grpo(defender_checkpoint)
 
         # train defender
         defend_trainer = GRPOTrainer(
             args=grpo_config,
             model=defender_checkpoint,
             peft_config=peft_config,
-            reward_funcs=[DefenderReward(attacker_frozen)],
+            reward_funcs=[ALL_REWARD_FUNCS["InjecAgentToolCallingReward"](grpo_config, attacker_frozen, "defender")],
             train_dataset=train_set,
         )
         defend_trainer.train()
 
+        # save defender state
         defender_checkpoint = f".../defender_round_{i}"
         defend_trainer.save_model(defender_checkpoint)
+        
+        # cleanup models
+        cleanup_model(defend_trainer, attacker_frozen)
     
 
 if __name__ == "__main__":
