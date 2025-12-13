@@ -58,48 +58,79 @@ def main(grpo_config, model_config):
     else:
         grpo_config.model_init_kwargs["attn_implementation"] = "flash_attention_2"
 
-    # set gpus for each device
-    attack_device = "cuda:0"
-    target_device = "cuda:1"
-    
     # load target model
     target_model = AutoModelForCausalLM.from_pretrained(
         grpo_config.target_model_name_or_path,
         torch_dtype=torch.bfloat16,
     )
-    target_model.to(target_device)
     
     grpo_config.model_name_or_path = grpo_config.attacker_model_name_or_path
     grpo_config.model_init_kwargs["device_map"] = {"": 0}  # put attacker model on cuda:0
-    
-    # load attacker model
-    # attacker_model = AutoModelForCausalLM.from_pretrained(
-    #     grpo_config.attacker_model_name_or_path,
-    #     torch_dtype=torch.bfloat16,
-    # )
-    # attacker_model.to(attack_device)
-    
-    # Add reward functions - right now this is only the InjecAgentToolCallingReward
-    reward_functions = [
-        ALL_REWARD_FUNCS[curr_func](grpo_config, target_model)
-        for curr_func in grpo_config.reward_functions
-    ]
-    
-    # Initialize and run trainer
-    trainer = GRPOTrainer(
+
+    attack_trainer = GRPOTrainer(
         args=grpo_config,
         model=grpo_config.attacker_model_name_or_path,
         peft_config=peft_config,
-        reward_funcs=reward_functions,
+        reward_funcs=[ALL_REWARD_FUNCS["InjecAgentToolCallingReward"](grpo_config, target_model, "attacker")],
         train_dataset=train_set,
+        use_vllm=True,
+        vllm_mode="colocate",
     )
-    trainer.target_model = target_model
-
-    trainer.train(resume_from_checkpoint=grpo_config.resume_from_checkpoint)
     
-    # TODO: write own training loop so that we can call trainer.step for each model after computing the rewards together
+    defend_trainer = GRPOTrainer(
+        args=grpo_config,
+        model=grpo_config.defender_model_name_or_path,
+        peft_config=peft_config,
+        reward_funcs=[ALL_REWARD_FUNCS["InjecAgentToolCallingReward"](grpo_config, target_model, "defender")],
+        train_dataset=train_set,
+        use_vllm=True,
+        vllm_mode="colocate"
+    )
     
+    rounds = 2
+    attacker_checkpoint = grpo_config.attacker_model_name_or_path
+    defender_checkpoint = grpo_config.defender_model_name_or_path
+    
+    for i in range(rounds):
+        # TODO: tear down old models using nlp code
+        # TODO: make sure wandb works for both models
+        # load frozen opponent
+        defender_frozen = AutoModelForCausalLM.from_pretrained(defender_checkpoint)
+        defender_frozen.eval()
+        defender_frozen.requires_grad_(False)
 
+        # train attacker
+        attack_trainer = GRPOTrainer(
+            args=grpo_config,
+            model=attacker_checkpoint,
+            peft_config=peft_config,
+            reward_funcs=[AttackerReward(defender_frozen)],
+            train_dataset=train_set,
+        )
+        attack_trainer.train()
+
+        # save attacker state
+        attacker_checkpoint = f".../attacker_round_{i}"
+        attack_trainer.save_model(attacker_checkpoint)
+
+        # load frozen attacker
+        attacker_frozen = AutoModelForCausalLM.from_pretrained(attacker_checkpoint)
+        attacker_frozen.eval()
+        attacker_frozen.requires_grad_(False)
+
+        # train defender
+        defend_trainer = GRPOTrainer(
+            args=grpo_config,
+            model=defender_checkpoint,
+            peft_config=peft_config,
+            reward_funcs=[DefenderReward(attacker_frozen)],
+            train_dataset=train_set,
+        )
+        defend_trainer.train()
+
+        defender_checkpoint = f".../defender_round_{i}"
+        defend_trainer.save_model(defender_checkpoint)
+    
 
 if __name__ == "__main__":
     parser = TrlParser((LocalGRPOConfig, ModelConfig))
