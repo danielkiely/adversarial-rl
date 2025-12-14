@@ -80,10 +80,98 @@ def main(grpo_config, model_config):
             torch.cuda.synchronize()
         print("GPU memory cleared!")
     
+    def delete_vllm_model(model):
+        # TODO: this has a lot of imports so maybe import this as well
+        destroy_model_parallel()
+        destroy_distributed_environment()
+        model.llm_engine.engine_core.shutdown()
+        del model
+        with contextlib.suppress(AssertionError):
+            torch.distributed.destroy_process_group()
+        gc.collect()
+        torch.cuda.empty_cache()
+        ray.shutdown()
+    
     def set_device_map_grpo(model_name_or_path):
         grpo_config.model_name_or_path = model_name_or_path
         grpo_config.model_init_kwargs["device_map"] = "auto"
         grpo_config.model_init_kwargs["max_memory"] = {0: "24.0GB", 1: "24.0GB"}
+    
+    
+    def prepare_defender():
+        # TODO: make sure that GPUs are all cleaned up before running this
+        train_raw = json.load(open(grpo_config.dataset, "r"))
+        train_dataset = Dataset.from_list(train_raw)
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=grpo_config.per_device_train_batch_size, # TODO: double check this
+            shuffle=True,
+        )
+        attacker_model = LLM(
+            model=args.attacker_model_name_or_path, # TODO: change this to the path of the saved attacker model
+            dtype=args.attacker_model_dtype,
+            trust_remote_code=True,
+            max_model_len=8192,
+        )
+        lora_request = None
+        attacker_tokenizer = AutoTokenizer.from_pretrained(
+            args.attacker_model_name_or_path, trust_remote_code=True
+        )
+        adv_prompt_results = []
+        for train_step, train_batch in tqdm(
+            enumerate(train_loader),
+            total=len(train_loader),
+            desc="Generating dataset of adversarial prompts",
+        ):
+            attacker_goals = train_batch["Attacker Instruction"]
+            attacker_prompts = [
+                ATTACKER_SYS_PROMPT.format(goal=attacker_goal)
+                for attacker_goal in attacker_goals
+            ]
+            attacker_messages = [
+                [{"role": "user", "content": attacker_prompt}]
+                for attacker_prompt in attacker_prompts
+            ]
+            attacker_input_texts = attacker_tokenizer.apply_chat_template(
+                attacker_messages, add_generation_prompt=True, tokenize=False
+            )
+
+            sampling_params = attacker_model.get_default_sampling_params()
+            if args.temperature is not None:
+                sampling_params.temperature = args.temperature
+            sampling_params.max_tokens = args.max_new_tokens
+            attacker_outputs = attacker_model.generate(
+                attacker_input_texts, sampling_params, lora_request=lora_request
+            )
+            attacker_output_texts = [
+                output.outputs[0].text for output in attacker_outputs
+            ]
+
+            # Extract the attack prompt from the output
+            for i in range(len(train_batch["Attacker Instruction"])):
+                attacker_output_text = attacker_output_texts[i]
+                attacker_goal = train_batch["Attacker Instruction"][i]
+
+                # Extract the attack prompt from the output
+                attacker_adv_prompt = extract_attack_prompt(attacker_output_text) # TODO import this
+
+                adv_prompt_results.append(
+                    {
+                        "adv_goal": attacker_goal,
+                        "attacker_output": attacker_output_text,
+                        "attacker_adv_prompt": attacker_adv_prompt,
+                    }
+                )
+
+        # Delete the attacker model to free up memory
+        delete_vllm_model(attacker_model)
+        del attacker_tokenizer
+
+        # Save the adversarial prompts
+        # TODO: make this the right path
+        os.makedirs(f"saved_adv_prompts/{model_name}/{val_set_name}", exist_ok=True)
+        with open(saved_adv_prompts_path, "w") as f:
+            json.dump(adv_prompt_results, f, indent=4)
     
 
     rounds = 2

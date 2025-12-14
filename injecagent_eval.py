@@ -145,7 +145,7 @@ def main():
 
     validation_data = json.load(open(args.validation_data_path, "r"))
 
-    # Load saved attack output
+    # Load saved attack output IF it already exists
     model_name = args.attacker_model_name_or_path.replace("/", "_")
     val_set_name = args.validation_data_path.replace("/", "_").replace(".json", "")
     saved_adv_prompts_path = (
@@ -173,9 +173,10 @@ def main():
                     "attacker_adv_prompt": curr_adv_prompt,
                 }
             )
+    # this one executes!
     else:
         # Load dataset
-        validation_dataset = Dataset.from_list(validation_data)
+        validation_dataset = Dataset.from_list(validation_data) # the eval data in data/InjecAgent/dataset/eval.json
         validation_loader = DataLoader(
             validation_dataset,
             batch_size=args.val_batch_size,
@@ -190,7 +191,7 @@ def main():
                 trust_remote_code=True,
                 enable_lora=True,
                 max_lora_rank=128,
-		max_model_len=8192,
+		        max_model_len=8192,
             )
             lora_request = LoRARequest(
                 "attack_lora", 1, lora_path=args.attacker_model_name_or_path
@@ -200,12 +201,12 @@ def main():
                 model=args.attacker_model_name_or_path,
                 dtype=args.attacker_model_dtype,
                 trust_remote_code=True,
-		max_model_len=8192,
+		        max_model_len=8192,
             )
             lora_request = None
-        attacker_tokenizer = AutoTokenizer.from_pretrained(
-            args.attacker_model_name_or_path, trust_remote_code=True
-        )
+            attacker_tokenizer = AutoTokenizer.from_pretrained(
+                args.attacker_model_name_or_path, trust_remote_code=True
+            )
 
         adv_prompt_results = []
         for validation_step, validation_batch in tqdm(
@@ -214,6 +215,8 @@ def main():
             desc="Generating adversarial prompts",
         ):
             # Generate adversarial prompt
+            # TODO: incorporate this into training loop
+            ################################################################
             attacker_goals = validation_batch["Attacker Instruction"]
             attacker_prompts = [
                 ATTACKER_SYS_PROMPT.format(goal=attacker_goal)
@@ -237,6 +240,7 @@ def main():
             attacker_output_texts = [
                 output.outputs[0].text for output in attacker_outputs
             ]
+            #################################################################
 
             # Extract the attack prompt from the output
             for i in range(len(validation_batch["Attacker Instruction"])):
