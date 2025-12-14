@@ -16,7 +16,6 @@ from utils import (
     InjecAgentDataset,
 )
 
-
 def main(grpo_config, model_config):
     # Set seed for reproducibility
     set_random_seed(grpo_config.seed)
@@ -122,12 +121,13 @@ def main(grpo_config, model_config):
         attack_trainer.train()
         
         # save attacker state
-        # TODO: make the checkpoint directory
         attacker_checkpoint = f"adv_rl_checkpoints/attacker_round_{i}"
         attack_trainer.save_model(attacker_checkpoint)
         
         # cleanup models
         cleanup_model(attack_trainer, defender_frozen)
+        
+        # TODO: generate a datset of attacks to be used in defender training
 
         # load frozen attacker on gpus 2, 3
         attacker_frozen = AutoModelForCausalLM.from_pretrained(
@@ -143,6 +143,7 @@ def main(grpo_config, model_config):
         # put defender on gpus 0, 1
         set_device_map_grpo(defender_checkpoint)
 
+        # TODO: switch this to be the attacks dataset
         # train defender
         defend_trainer = GRPOTrainer(
             args=grpo_config,

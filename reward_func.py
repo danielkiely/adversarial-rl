@@ -124,18 +124,23 @@ def if_judge_success(judge_output):
 
 
 class InjecAgentToolCallingReward:
-    def __init__(self, config, target_model, mode):
+    def __init__(self, config, frozen_model, mode):
         """
         Sets up the OpenAI API endpoint for the model and loads the InjecAgent tools
         """
         self.__name__ = "InjecAgentToolCallingReward"
+        
+        if mode == "defender":
+            self.attacker_model = frozen_model
+        
+        elif mode == "attacker":
+            self.target_model = frozen_model
+        else:
+            raise ValueError(f"Invalid mode: {mode}")
+        
         self.config = config
-        self.target_model = target_model
-        self.mode = mode
 
         # Load all target models and tokenizers
-        self.all_target_model_url = config.target_model_url.split(";")
-        self.all_target_model_name_or_path = config.target_model_name_or_path.split(";")
         self.all_target_client = [None]
         self.all_target_tokenizer = [AutoTokenizer.from_pretrained(config.defender_model_name_or_path, trust_remote_code=True)]
         self.all_target_model = [target_model]
@@ -363,7 +368,7 @@ class InjecAgentToolCallingReward:
         adv_goals, adv_prompts = [], []
         for i in range(len(prompts)):
             curr_prompt = prompts[i][0]["content"]
-            curr_completion = completions[i][0]["content"] # TODO: figure out what this is
+            curr_completion = completions[i][0]["content"]
             goal = extract_attack_goal(curr_prompt)
             adv = extract_attack_prompt(curr_completion)
             adv_goals.append(goal)
