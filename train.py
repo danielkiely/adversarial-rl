@@ -1,12 +1,17 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-# This source code is licensed under the license found in the
-# LICENSE file in the root directory of this source tree.
-
 from trl import TrlParser, ModelConfig, GRPOTrainer
 from peft import LoraConfig
 from transformers import AutoModelForCausalLM
+from datasets import Dataset
+from torch.utils.data import DataLoader
+from vllm import LLM
+from vllm.distributed.parallel_state import (
+    destroy_model_parallel,
+    destroy_distributed_environment,
+)
 import torch
+import json
+from tqdm import tqdm
+import gc
 
 # Custom imports
 from config import LocalGRPOConfig
@@ -14,7 +19,9 @@ from reward_func import ALL_REWARD_FUNCS
 from utils import (
     set_random_seed,
     InjecAgentDataset,
+    ATTACKER_SYS_PROMPT
 )
+from reward_func import evaluate_output_prompted, extract_attack_prompt
 
 def main(grpo_config, model_config):
     # Set seed for reproducibility
@@ -81,7 +88,6 @@ def main(grpo_config, model_config):
         print("GPU memory cleared!")
     
     def delete_vllm_model(model):
-        # TODO: this has a lot of imports so maybe import this as well
         destroy_model_parallel()
         destroy_distributed_environment()
         model.llm_engine.engine_core.shutdown()
@@ -98,27 +104,26 @@ def main(grpo_config, model_config):
         grpo_config.model_init_kwargs["max_memory"] = {0: "24.0GB", 1: "24.0GB"}
     
     
-    def prepare_defender():
-        # TODO: make sure that GPUs are all cleaned up before running this
+    def create_attack_dataset(i):
         train_raw = json.load(open(grpo_config.dataset, "r"))
         train_dataset = Dataset.from_list(train_raw)
         train_loader = DataLoader(
             train_dataset,
-            batch_size=grpo_config.per_device_train_batch_size, # TODO: double check this
+            batch_size=16, # hyperparameter
             shuffle=True,
         )
         attacker_model = LLM(
-            model=args.attacker_model_name_or_path, # TODO: change this to the path of the saved attacker model
-            dtype=args.attacker_model_dtype,
+            model=f"adv_rl_checkpoints/attacker_round_{i}",
+            dtype="bfloat16",
             trust_remote_code=True,
             max_model_len=8192,
         )
         lora_request = None
         attacker_tokenizer = AutoTokenizer.from_pretrained(
-            args.attacker_model_name_or_path, trust_remote_code=True
+            f"adv_rl_checkpoints/attacker_round_{i}", trust_remote_code=True
         )
         adv_prompt_results = []
-        for train_step, train_batch in tqdm(
+        for _, train_batch in tqdm(
             enumerate(train_loader),
             total=len(train_loader),
             desc="Generating dataset of adversarial prompts",
@@ -169,8 +174,8 @@ def main(grpo_config, model_config):
 
         # Save the adversarial prompts
         # TODO: make this the right path
-        os.makedirs(f"saved_adv_prompts/{model_name}/{val_set_name}", exist_ok=True)
-        with open(saved_adv_prompts_path, "w") as f:
+        os.makedirs(f"adv_rl_saved_attacks/{i}", exist_ok=True)
+        with open(f"adv_rl_saved_attacks/{i}/adv_prompt_results.json", "w") as f:
             json.dump(adv_prompt_results, f, indent=4)
     
 
@@ -216,6 +221,9 @@ def main(grpo_config, model_config):
         cleanup_model(attack_trainer, defender_frozen)
         
         # TODO: generate a datset of attacks to be used in defender training
+        create_attack_dataset(i)
+        print("we made it!!!!")
+        break
 
         # load frozen attacker on gpus 2, 3
         attacker_frozen = AutoModelForCausalLM.from_pretrained(

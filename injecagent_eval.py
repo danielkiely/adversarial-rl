@@ -240,7 +240,6 @@ def main():
             attacker_output_texts = [
                 output.outputs[0].text for output in attacker_outputs
             ]
-            #################################################################
 
             # Extract the attack prompt from the output
             for i in range(len(validation_batch["Attacker Instruction"])):
@@ -266,6 +265,7 @@ def main():
         os.makedirs(f"saved_adv_prompts/{model_name}/{val_set_name}", exist_ok=True)
         with open(saved_adv_prompts_path, "w") as f:
             json.dump(adv_prompt_results, f, indent=4)
+        #################################################################
 
     # Load target model
     if (
