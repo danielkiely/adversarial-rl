@@ -237,7 +237,6 @@ class InjecAgentToolCallingReward:
                 gen_ids = outputs[i, seq_len:]
                 texts.append(tokenizer.decode(gen_ids, skip_special_tokens=True))
             
-            print(f"query_huggingface_text_batch():text outputted: {texts[0]}")
             return texts
         
         except Exception as e:
