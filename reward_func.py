@@ -140,19 +140,19 @@ class DefenderReward:
         for i in range(len(prompts)):
             eval_result = evaluate_output_prompted(
                 completions[i][0]['content'],
-                data[i]["attacker_tools"][0],
                 data[i]["attacker_tools"],
+                [data[i]["attacker_tools"]],
                 data[i]["user_tool"],
                 data[i]["attacker_adv_prompt"],
             )
             
             judge_model_output = eval_result["eval"]
-            if judge_model_output == "succ":
+            if judge_model_output == "unsucc":
                 rewards[i] = 1.0
             else:
                 rewards[i] = 0.0
         
-        return rewards[i]
+        return rewards
         
 
 class InjecAgentToolCallingReward:
