@@ -431,4 +431,5 @@ class InjecAgentToolCallingReward:
 
 ALL_REWARD_FUNCS = {
     "InjecAgentToolCallingReward": InjecAgentToolCallingReward,
+    "DefenderReward": DefenderReward,
 }
