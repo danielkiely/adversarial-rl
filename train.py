@@ -1,5 +1,5 @@
 from trl import TrlParser, ModelConfig, GRPOTrainer
-from peft import LoraConfig
+from peft import LoraConfig, PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from datasets import Dataset
 from torch.utils.data import DataLoader
@@ -265,29 +265,75 @@ def main(grpo_config, model_config):
 
     
     rounds = 3
-    attacker_checkpoint = grpo_config.attacker_model_name_or_path
-    defender_checkpoint = grpo_config.defender_model_name_or_path
+    
+    attacker_base_string = grpo_config.attacker_model_name_or_path
+    defender_base_string = grpo_config.defender_model_name_or_path
+    
+    attacker_checkpoint = None
+    defender_checkpoint = None
+    
+    attacker_base_model = None
+    attacker_train_model = None
+    attacker_frozen = None
+    
+    defender_base_model = None
+    defender_train_model = None
+    defender_frozen = None
+    
     gpu_log_file = "gpu.log"
     
     for i in range(rounds):
         # load frozen opponent and put on gpus 2, 3
-        defender_frozen = AutoModelForCausalLM.from_pretrained(
-            defender_checkpoint,
-            torch_dtype=torch.bfloat16,
-            device_map="auto",
-            max_memory={2: "23.5GB", 3: "23.5GB"},
-        )
+        # if first round, load base. otherwise, load LoRA weights from checkpoint
+        if i == 0:
+            defender_frozen = AutoModelForCausalLM.from_pretrained(
+                defender_base_string,
+                torch_dtype=torch.bfloat16,
+                device_map="auto",
+                max_memory={2: "23.5GB", 3: "23.5GB"},
+            )
+        else:
+            defender_base_model = AutoModelForCausalLM.from_pretrained(
+                defender_base_string,
+                torch_dtype=torch.bfloat16,
+                device_map="auto",
+                max_memory={2: "23.5GB", 3: "23.5GB"},
+            )
+            defender_frozen = PeftModel.from_pretrained(
+                defender_base_model,
+                defender_checkpoint,
+            )
+            
         # frozen model only used for inference
         defender_frozen.eval()
         defender_frozen.requires_grad_(False)
         
         # put attacker model on gpus 0, 1
-        set_device_map_grpo(attacker_checkpoint)
+        if i == 0:
+            attacker_train_model = AutoModelForCausalLM.from_pretrained(
+                attacker_base_string,
+                torch_dtype=torch.bfloat16,
+                device_map="auto",
+                max_memory={0: "23.5GB", 1: "23.5GB"},
+            )
+        else:
+            attacker_base_model = AutoModelForCausalLM.from_pretrained(
+                attacker_base_string,
+                torch_dtype=torch.bfloat16,
+                device_map="auto",
+                max_memory={0: "23.5GB", 1: "23.5GB"},
+            )
+            attacker_train_model = PeftModel.from_pretrained(
+                attacker_base_model,
+                attacker_checkpoint,
+            )
+            
+        set_device_map_grpo(attacker_base_string)
 
         # train attacker
         attack_trainer = GRPOTrainer(
             args=grpo_config,
-            model=attacker_checkpoint,
+            model=attacker_train_model,
             peft_config=peft_config,
             reward_funcs=[ALL_REWARD_FUNCS["InjecAgentToolCallingReward"](grpo_config, defender_frozen, "attacker")],
             train_dataset=train_set,
@@ -301,11 +347,17 @@ def main(grpo_config, model_config):
         log_gpu_usage(f"Attacker training round {i} completed.", gpu_log_file)
         
         # cleanup models
-        cleanup_model(attack_trainer, defender_frozen)
+        cleanup_model(attack_trainer, defender_frozen, defender_base_model, attacker_train_model, attacker_base_model)
         attack_trainer = None
         defender_frozen = None
+        defender_base_model = None
+        attacker_train_model = None
+        attacker_base_model = None
         del attack_trainer
         del defender_frozen
+        del defender_base_model
+        del attacker_train_model
+        del attacker_base_model
         gc.collect()
         torch.cuda.empty_cache()
         time.sleep(5)
@@ -317,23 +369,55 @@ def main(grpo_config, model_config):
         log_gpu_usage(f"Defender dataset created for round {i}.", gpu_log_file)
 
         # load frozen attacker on gpus 2, 3
-        attacker_frozen = AutoModelForCausalLM.from_pretrained(
-            attacker_checkpoint,
-            torch_dtype=torch.bfloat16,
-            device_map="auto",
-            max_memory={2: "23.5GB", 3: "23.5GB"},
-        )
+        if i == 0:
+            attacker_frozen = AutoModelForCausalLM.from_pretrained(
+                attacker_base_string,
+                torch_dtype=torch.bfloat16,
+                device_map="auto",
+                max_memory={2: "23.5GB", 3: "23.5GB"},
+            )
+        else:
+            attacker_base_model = AutoModelForCausalLM.from_pretrained(
+                attacker_base_string,
+                torch_dtype=torch.bfloat16,
+                device_map="auto",
+                max_memory={2: "23.5GB", 3: "23.5GB"},
+            )
+            attacker_frozen = PeftModel.from_pretrained(
+                attacker_base_model,
+                attacker_checkpoint,
+            )
+            
         # frozen model only used for inference
         attacker_frozen.eval()
         attacker_frozen.requires_grad_(False)
         
+        if i == 0:
+            defender_train_model = AutoModelForCausalLM.from_pretrained(
+                defender_base_string,
+                torch_dtype=torch.bfloat16,
+                device_map="auto",
+                max_memory={0: "23.5GB", 1: "23.5GB"},
+            )
+        else:
+            defender_base_model = AutoModelForCausalLM.from_pretrained(
+                defender_base_string,
+                torch_dtype=torch.bfloat16,
+                device_map="auto",
+                max_memory={0: "23.5GB", 1: "23.5GB"},
+            )
+            defender_train_model = PeftModel.from_pretrained(
+                defender_base_model,
+                defender_checkpoint,
+            )
+        
         # put defender on gpus 0, 1
-        set_device_map_grpo(defender_checkpoint)
+        set_device_map_grpo(defender_base_string)
 
         # train defender
         defend_trainer = GRPOTrainer(
             args=grpo_config,
-            model=defender_checkpoint,
+            model=defender_train_model,
             peft_config=peft_config,
             reward_funcs=[ALL_REWARD_FUNCS["DefenderReward"](grpo_config)],
             train_dataset=defender_dataset,
@@ -347,8 +431,21 @@ def main(grpo_config, model_config):
         defend_trainer.save_model(defender_checkpoint)
         
         # cleanup models
-        cleanup_model(defend_trainer, attacker_frozen)
+        cleanup_model(defend_trainer, attacker_frozen, attacker_base_model, defender_train_model, defender_base_model)
         
+        defend_trainer = None
+        attacker_frozen = None
+        attacker_base_model = None
+        defender_train_model = None
+        defender_base_model = None
+        del defend_trainer
+        del attacker_frozen
+        del attacker_base_model
+        del defender_train_model
+        del defender_base_model
+        gc.collect()
+        torch.cuda.empty_cache()
+        time.sleep(5)
         log_gpu_usage(f"Cleanup after defender round {i} completed.", gpu_log_file)
     
     print("made it!!")
