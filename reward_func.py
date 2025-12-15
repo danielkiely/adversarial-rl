@@ -123,6 +123,38 @@ def if_judge_success(judge_output):
     return "yes" in judge_output.lower() or "unsafe" in judge_output.lower()
 
 
+class DefenderReward:
+    def __init__(self, config):
+        self.__name__ = "DefenderReward"
+        self.config=config
+    
+    def __call__(self, prompts, completions, **kwargs):
+        data = [{} for _ in range(len(prompts))]
+        for key in kwargs:
+            if type(kwargs[key]) is list:
+                for i in range(len(kwargs[key])):
+                    data[i][key] = kwargs[key][i]
+        
+        # TODO: make this work with train.py
+        rewards = [0.0] * len(prompts)
+        for i in range(prompts):
+            eval_result = evaluate_output_prompted(
+                completions[i],
+                data[i]["attacker_tools"][0],
+                data[i]["attacker_tools"],
+                data[i]["user_tool"],
+                data[i]["attacker_adv_prompt"],
+            )
+            
+            judge_model_output = eval_result["eval"]
+            if judge_model_output == "succ":
+                rewards[i] = 1.0
+            else:
+                rewards[i] = 0.0
+        
+        return rewards[i]
+        
+
 class InjecAgentToolCallingReward:
     def __init__(self, config, frozen_model, mode):
         """
@@ -212,26 +244,6 @@ class InjecAgentToolCallingReward:
             print(f"Error querying Hugging Face model (batch): {e}")
             return [""] * len(prompts)
     
-    def query_vllm_text_batch(self, client, prompts, model_name, max_tokens=256, temperature=None):
-        """
-        queries the vllm and returns the response
-        """
-        try:
-            kwargs = {
-                "model": model_name,
-                "prompt": prompts,
-            }
-            if max_tokens is not None:
-                kwargs["max_tokens"] = max_tokens
-            if temperature is not None:
-                kwargs["temperature"] = temperature
-            response = client.completions.create(**kwargs)
-            dummy =  [choice.text for choice in response.choices]
-            print(f"query_vllm_text_batch():text outputted: {dummy[0]}")
-            return dummy
-        except Exception as e:
-            print(f"Error querying vLLM (batch): {e}")
-            return [""] * len(prompts)
 
     def run_target_model(self, i, user_inputs):
         """
@@ -255,70 +267,6 @@ class InjecAgentToolCallingReward:
             max_tokens=self.config.target_model_max_completion_length,
             temperature=self.config.target_model_temperature,
         )
-        
-
-    def fetch_with_retries(
-        self,
-        client,
-        messages,
-        tools,
-        model_name,
-        max_retries=5,
-        reasoning_effort="minimal",
-    ):
-        """
-        seems to be a helper function mainly targeted at APIs with rate limits
-        """
-        if "anthropic" in model_name.lower():
-            messages[2] = to_anthropic_tool_call(messages[2])
-            messages[3] = to_anthropic_tool_result(messages[3])
-
-        for attempt in range(max_retries):
-            try:
-                if "anthropic" in model_name.lower():
-                    completion = client.messages.create(
-                        model=model_name,
-                        system=messages[0]["content"],
-                        messages=messages[1:],
-                        tools=to_anthropic_tools(tools),
-                        max_tokens=1024,
-                    )
-                    # Convert to openai output format
-                    completion = anthropic_completion_to_openai(completion)
-                else:
-                    if "gpt-5" in model_name.lower():
-                        completion = client.chat.completions.create(
-                            model=model_name,
-                            messages=messages,
-                            tools=tools,
-                            reasoning_effort=reasoning_effort,
-                        )
-                    else:
-                        completion = client.chat.completions.create(
-                            model=model_name, messages=messages, tools=tools
-                        )
-
-                return completion
-            except RateLimitError as e:
-                if attempt < max_retries - 1:
-                    wait_time = 10**attempt
-                    print(
-                        f"Rate limit error encountered. Retrying in {wait_time} seconds..."
-                    )
-                    time.sleep(wait_time)
-                else:
-                    print(f"Repeated rate limit errors: {e}")
-                    raise e
-            except Exception as e:
-                if hasattr(e, "message") and "expired" in e.message:
-                    # Claude api token expired
-                    raise e
-
-                if attempt < max_retries - 1:
-                    pass
-                else:
-                    print(f"Skipping due to error: {e}")
-                    return ""
 
 
     def __call__(self, prompts, completions, **kwargs):

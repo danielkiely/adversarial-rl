@@ -311,9 +311,9 @@ def main():
             tensor_parallel_size=torch.cuda.device_count(),
 	    max_model_len=8192,
         )
-        target_tokenizer = AutoTokenizer.from_pretrained(
-            args.target_model_name_or_path, trust_remote_code=True
-        )
+    target_tokenizer = AutoTokenizer.from_pretrained(
+        args.target_model_name_or_path, trust_remote_code=True
+    )
 
     # Add sample_id
     for i in range(len(adv_prompt_results)):

@@ -24,9 +24,12 @@ from reward_func import ALL_REWARD_FUNCS
 from utils import (
     set_random_seed,
     InjecAgentDataset,
-    ATTACKER_SYS_PROMPT
+    ATTACKER_SYS_PROMPT,
+    INJECAGENT_SYS_PROMPT,
+    INJECAGENT_USER_PROMPT,
 )
 from reward_func import evaluate_output_prompted, extract_attack_prompt
+
 
 def main(grpo_config, model_config):
     # Set seed for reproducibility
@@ -104,10 +107,10 @@ def main(grpo_config, model_config):
         gc.collect()
         if torch.cuda.is_available():
             with torch.no_grad():
-                for i in range(torch.cuda.device_count()):
+                for j in range(torch.cuda.device_count()):
                     torch.cuda.empty_cache()
                     torch.cuda.synchronize(i)
-                    print(f"GPU {i} - Allocated: {torch.cuda.memory_allocated(i)/1024**3:.2f} GB, Reserved: {torch.cuda.memory_reserved(i)/1024**3:.2f} GB")
+                    print(f"GPU {j} - Allocated: {torch.cuda.memory_allocated(j)/1024**3:.2f} GB, Reserved: {torch.cuda.memory_reserved(j)/1024**3:.2f} GB")
         print(f"Allocated: {torch.cuda.memory_allocated(0) / 1024**3:.2f} GB")
         print(f"Reserved: {torch.cuda.memory_reserved(0) / 1024**3:.2f} GB")
         print("GPU memory cleared!")
@@ -126,10 +129,17 @@ def main(grpo_config, model_config):
     def set_device_map_grpo(model_name_or_path):
         grpo_config.model_name_or_path = model_name_or_path
         grpo_config.model_init_kwargs["device_map"] = "auto"
-        grpo_config.model_init_kwargs["max_memory"] = {0: "24.0GB", 1: "24.0GB"}
+        grpo_config.model_init_kwargs["max_memory"] = {0: "23.5GB", 1: "23.5GB"}
     
     
-    def create_attack_dataset(i):
+    def create_attack_dataset(i: int) -> Dataset:
+        """takes the current attack model and creates a dataset of adversarial prompts. transforms
+            this dataset into a format that can be used to train the target model.
+
+        Args:
+            i (int): round of adversarial training. used for checkpoint loading/saving
+        """
+        # load training data as raw json, Dataset, and DataLoader
         train_raw = json.load(open(grpo_config.dataset, "r"))
         train_dataset = Dataset.from_list(train_raw)
         train_loader = DataLoader(
@@ -137,8 +147,7 @@ def main(grpo_config, model_config):
             batch_size=16, # hyperparameter
             shuffle=True,
         )
-        print(f"Allocated: {torch.cuda.memory_allocated(0) / 1024**3:.2f} GB")
-        print(f"Reserved: {torch.cuda.memory_reserved(0) / 1024**3:.2f} GB")
+        # use vLLM to load attacker model from most recent checkpoint
         attacker_model = LLM(
             model="meta-llama/Llama-3.1-8B-Instruct",    
             dtype="bfloat16",
@@ -152,6 +161,7 @@ def main(grpo_config, model_config):
         attacker_tokenizer = AutoTokenizer.from_pretrained(
             f"adv_rl_checkpoints/attacker_round_{i}", trust_remote_code=True
         )
+        # generate adversarial prompts
         adv_prompt_results = []
         for _, train_batch in tqdm(
             enumerate(train_loader),
@@ -170,10 +180,7 @@ def main(grpo_config, model_config):
             attacker_input_texts = attacker_tokenizer.apply_chat_template(
                 attacker_messages, add_generation_prompt=True, tokenize=False
             )
-
             sampling_params = attacker_model.get_default_sampling_params()
-           #  if args.temperature is not None:
-                # sampling_params.temperature = args.temperature
             sampling_params.max_tokens = 1024
             attacker_outputs = attacker_model.generate(
                 attacker_input_texts, sampling_params, lora_request=lora_request
@@ -182,12 +189,10 @@ def main(grpo_config, model_config):
                 output.outputs[0].text for output in attacker_outputs
             ]
 
-            # Extract the attack prompt from the output
-            for i in range(len(train_batch["Attacker Instruction"])):
-                attacker_output_text = attacker_output_texts[i]
-                attacker_goal = train_batch["Attacker Instruction"][i]
-
-                # Extract the attack prompt from the output
+            # extract the attack prompt from the output
+            for j in range(len(train_batch["Attacker Instruction"])):
+                attacker_output_text = attacker_output_texts[j]
+                attacker_goal = train_batch["Attacker Instruction"][j]
                 attacker_adv_prompt = extract_attack_prompt(attacker_output_text)
 
                 adv_prompt_results.append(
@@ -195,18 +200,72 @@ def main(grpo_config, model_config):
                         "adv_goal": attacker_goal,
                         "attacker_output": attacker_output_text,
                         "attacker_adv_prompt": attacker_adv_prompt,
+                        "attacker_tools": train_batch['Attacker Tools'][j],
+                        "user_tool": train_batch['User Tool'],
                     }
                 )
 
-        # Delete the attacker model to free up memory
+        # delete the attacker model to free up memory
         delete_vllm_model(attacker_model)
         del attacker_tokenizer
 
-        # Save the adversarial prompts
-        # TODO: make this the right path
+        # save the adversarial prompts to json file
         os.makedirs(f"adv_rl_saved_attacks/{i}", exist_ok=True)
         with open(f"adv_rl_saved_attacks/{i}/adv_prompt_results.json", "w") as f:
             json.dump(adv_prompt_results, f, indent=4)
+        
+        # add sample_id to each prompt
+        for j in range(len(adv_prompt_results)):
+            adv_prompt_results[j]["sample_id"] = j
+        
+        # make adv_prompt_results a dataset and dataloader
+        adv_prompt_results_dataset = Dataset.from_list(adv_prompt_results)
+        adv_prompt_results_dataloader = DataLoader(
+                adv_prompt_results_dataset,
+                batch_size=16,
+                shuffle=False,
+        )
+        
+        tool_dict = injecagent_get_tool_dict()
+        
+        # create dataset of user prompts to the defender model
+        user_inputs = []
+        for adv_prompt_batch in tqdm(adv_prompt_results_dataloader, desc="Attacking target model"):
+            for j in range(len(adv_prompt_batch["adv_goal"])):
+                curr_data_row = train_raw[adv_prompt_batch["sample_id"][j]]
+                available_tool_names = [curr_data_row["User Tool"]] + curr_data_row[
+                    "Attacker Tools"
+                ]
+                available_tool_descriptions = json.dumps(
+                    [tool_dict[tool] for tool in available_tool_names], indent=True
+                )
+                obvervation = curr_data_row["Tool Response Template"].replace(
+                    "<Attacker Instruction>", adv_prompt_batch["attacker_adv_prompt"][j]
+                )
+                agent_scratchpad = f"\n{curr_data_row['Thought']}\nAction: {curr_data_row['User Tool']}\nAction Input: {curr_data_row['Tool Parameters']}\nObservation: {obvervation}\n"
+
+                user_prompt_filled = INJECAGENT_USER_PROMPT.format(
+                    available_tool_descriptions=available_tool_descriptions,
+                    input=curr_data_row["User Instruction"],
+                    available_tool_names=available_tool_names,
+                    agent_scratchpad=agent_scratchpad,
+                )
+                user_inputs.append(
+                    {
+                        "prompt": [
+                            {"role": "system", "content": INJECAGENT_SYS_PROMPT},
+                            {"role": "user", "content": user_prompt_filled},
+                        ],
+                        "sample_id": adv_prompt_batch["sample_id"][j],
+                        "adv_goal": adv_prompt_batch["adv_goal"][j],
+                        "attacker_adv_prompt": adv_prompt_batch["attacker_adv_prompt"][j],
+                        "attacker_tools": adv_prompt_batch["attacker_tools"][j],
+                        "user_tool": adv_prompt_batch["user_tool"][j],
+                    }
+                )
+            
+        return Dataset.from_list(user_inputs)
+
     
 
     rounds = 2
@@ -224,7 +283,7 @@ def main(grpo_config, model_config):
             defender_checkpoint,
             torch_dtype=torch.bfloat16,
             device_map="auto",
-            max_memory={2: "24.0GB", 3: "24.0GB"},
+            max_memory={2: "23.5GB", 3: "23.5GB"},
         )
         # frozen model only used for inference
         defender_frozen.eval()
@@ -257,17 +316,14 @@ def main(grpo_config, model_config):
         torch.cuda.empty_cache()
         time.sleep(5)
         
-        # TODO: generate a datset of attacks to be used in defender training
-        create_attack_dataset(i)
-        print("we made it!!!!")
-        break
+        defender_dataset = create_attack_dataset(i)
 
         # load frozen attacker on gpus 2, 3
         attacker_frozen = AutoModelForCausalLM.from_pretrained(
             attacker_checkpoint,
             torch_dtype=torch.bfloat16,
             device_map="auto",
-            max_memory={2: "24.0GB", 3: "24.0GB"},
+            max_memory={2: "23.5GB", 3: "23.5GB"},
         )
         # frozen model only used for inference
         attacker_frozen.eval()
@@ -283,7 +339,7 @@ def main(grpo_config, model_config):
             model=defender_checkpoint,
             peft_config=peft_config,
             reward_funcs=[ALL_REWARD_FUNCS["InjecAgentToolCallingReward"](grpo_config, attacker_frozen, "defender")],
-            train_dataset=train_set,
+            train_dataset=defender_dataset,
         )
         defend_trainer.train()
 
