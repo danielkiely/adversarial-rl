@@ -137,9 +137,9 @@ class DefenderReward:
         
         # TODO: make this work with train.py
         rewards = [0.0] * len(prompts)
-        for i in range(prompts):
+        for i in range(len(prompts)):
             eval_result = evaluate_output_prompted(
-                completions[i],
+                completions[i][0]['content'],
                 data[i]["attacker_tools"][0],
                 data[i]["attacker_tools"],
                 data[i]["user_tool"],

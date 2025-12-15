@@ -27,6 +27,7 @@ from utils import (
     ATTACKER_SYS_PROMPT,
     INJECAGENT_SYS_PROMPT,
     INJECAGENT_USER_PROMPT,
+    injecagent_get_tool_dict,
 )
 from reward_func import evaluate_output_prompted, extract_attack_prompt
 
@@ -165,7 +166,7 @@ def main(grpo_config, model_config):
         )
         # generate adversarial prompts
         adv_prompt_results = []
-        for _, train_batch in tqdm(
+        for k, train_batch in tqdm(
             enumerate(train_loader),
             total=len(train_loader),
             desc="Generating dataset of adversarial prompts",
@@ -202,8 +203,8 @@ def main(grpo_config, model_config):
                         "adv_goal": attacker_goal,
                         "attacker_output": attacker_output_text,
                         "attacker_adv_prompt": attacker_adv_prompt,
-                        "attacker_tools": train_batch['Attacker Tools'][j],
-                        "user_tool": train_batch['User Tool'],
+                        "attacker_tools": train_batch['Attacker Tools'][0][j],
+                        "user_tool": train_batch['User Tool'][j],
                     }
                 )
 
