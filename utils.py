@@ -10,6 +10,8 @@ import numpy as np
 import torch
 import csv
 import json
+import subprocess
+import torch
 
 
 from openai.types.chat.chat_completion_message_tool_call import (
@@ -334,3 +336,18 @@ def anthropic_completion_to_openai(completion):
             return obj
 
     return to_namespace(openai_like)
+
+def log_gpu_usage(context, gpu_log_file):
+    res = subprocess.run('nvidia-smi', capture_output=True, text=True)
+    with open(gpu_log_file, 'a') as f:
+        f.write(context)
+        f.write('\n')
+        f.write(res.stdout)
+        f.write('\n')
+        if torch.cuda.is_available():
+            for j in range(torch.cuda.device_count()):
+                torch.cuda.synchronize(j)
+                f.write(f"GPU {j} - Allocated: {torch.cuda.memory_allocated(j)/1024**3:.2f} GB, Reserved: {torch.cuda.memory_reserved(j)/1024**3:.2f} GB")
+                f.write('\n')
+        f.flush()
+    
