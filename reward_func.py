@@ -129,7 +129,8 @@ class InjecAgentToolCallingReward:
         Sets up the OpenAI API endpoint for the model and loads the InjecAgent tools
         """
         self.__name__ = "InjecAgentToolCallingReward"
-        
+       
+        self.mode = mode
         if mode == "defender":
             self.attacker_model = frozen_model
         
@@ -143,7 +144,7 @@ class InjecAgentToolCallingReward:
         # Load all target models and tokenizers
         self.all_target_client = [None]
         self.all_target_tokenizer = [AutoTokenizer.from_pretrained(config.defender_model_name_or_path, trust_remote_code=True)]
-        self.all_target_model = [target_model]
+        self.all_target_model = [self.target_model]
         
         tok = self.all_target_tokenizer[0]
         tok.padding_side = "left"  # optional but recommended for batched causal LM
@@ -237,8 +238,6 @@ class InjecAgentToolCallingReward:
         just sets up prompt template and calls function to query the llm model
         """
         tokenizer = self.all_target_tokenizer[i]
-        client = self.all_target_client[i]
-        model_name = self.all_target_model_name_or_path[i]
 
         messages = [
             [
@@ -321,37 +320,6 @@ class InjecAgentToolCallingReward:
                     print(f"Skipping due to error: {e}")
                     return ""
 
-    def run_gpt_target_model(self, i, user_inputs):
-        """
-        queries the target model, keeps the returned text output and tool calls in list
-        """
-        print("ahhhh running run_gpt_target_model oh no")
-        client = self.all_target_client[i]
-        model_name = self.all_target_model_name_or_path[i]
-        with ThreadPoolExecutor(max_workers=len(user_inputs)) as executor:
-            futures = [
-                executor.submit(
-                    self.fetch_with_retries,
-                    client,
-                    messages,
-                    tools,
-                    model_name,
-                    reasoning_effort=self.config.reasoning_effort,
-                )
-                for messages, tools in user_inputs
-            ]
-            all_completions = [f.result() for f in futures]
-
-        target_model_output_texts = []
-        target_model_output_tool_calls = []
-        for completion in all_completions:
-            target_model_output_texts.append(completion.choices[0].message.content)
-            tool_calls = completion.choices[0].message.tool_calls
-            if isinstance(tool_calls, List):
-                tool_calls = [item.model_dump() for item in tool_calls]
-            target_model_output_tool_calls.append(tool_calls)
-
-        return list(zip(target_model_output_texts, target_model_output_tool_calls))
 
     def __call__(self, prompts, completions, **kwargs):
         """
@@ -457,14 +425,9 @@ class InjecAgentToolCallingReward:
             futures = []
 
             for i in range(len(self.all_target_client)):
-                if "/" not in self.all_target_model_name_or_path[i]:
-                    futures.append(
-                        executor.submit(self.run_gpt_target_model, i, user_inputs_gpt)
-                    )
-                else:
-                    futures.append(
-                        executor.submit(self.run_target_model, i, user_inputs)
-                    )
+                futures.append(
+                    executor.submit(self.run_target_model, i, user_inputs)
+                )
 
             all_outputs = [f.result() for f in futures]
 
@@ -473,22 +436,13 @@ class InjecAgentToolCallingReward:
         for j, model_outputs in enumerate(all_outputs):
             for i, curr_row in enumerate(model_outputs):
                 curr_data_row = data[i]
-
-                if "/" not in self.all_target_model_name_or_path[j]:
-                    eval_result = evaluate_output_finetuned(
-                        curr_row[0],
-                        curr_data_row["Attacker Tools"][0],
-                        curr_data_row["User Tool"],
-                        curr_row[1],
-                    )
-                else:
-                    eval_result = evaluate_output_prompted(
-                        curr_row,
-                        curr_data_row["Attacker Tools"][0],
-                        curr_data_row["Attacker Tools"],
-                        curr_data_row["User Tool"],
-                        adv_prompts[i],
-                    )
+                eval_result = evaluate_output_prompted(
+                    curr_row,
+                    curr_data_row["Attacker Tools"][0],
+                    curr_data_row["Attacker Tools"],
+                    curr_data_row["User Tool"],
+                    adv_prompts[i],
+                )
 
                 judge_model_output = eval_result["eval"]
 

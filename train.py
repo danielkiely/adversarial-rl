@@ -1,6 +1,6 @@
 from trl import TrlParser, ModelConfig, GRPOTrainer
 from peft import LoraConfig
-from transformers import AutoModelForCausalLM
+from transformers import AutoModelForCausalLM, AutoTokenizer
 from datasets import Dataset
 from torch.utils.data import DataLoader
 from vllm import LLM
@@ -8,10 +8,15 @@ from vllm.distributed.parallel_state import (
     destroy_model_parallel,
     destroy_distributed_environment,
 )
+from vllm.lora.request import LoRARequest
 import torch
 import json
 from tqdm import tqdm
 import gc
+import time
+import ray
+import contextlib
+import os
 
 # Custom imports
 from config import LocalGRPOConfig
@@ -72,19 +77,39 @@ def main(grpo_config, model_config):
 
         Usage: cleanup_model(trainer, model) or cleanup_model(shaped_trainer)
         """
+        print(f"Allocated: {torch.cuda.memory_allocated(0) / 1024**3:.2f} GB")
+        print(f"Reserved: {torch.cuda.memory_reserved(0) / 1024**3:.2f} GB")
         for m in models:
             if m is not None:
                 try:
                     # If it's a trainer, get the model
                     if hasattr(m, 'model'):
+                        m.model.to('cpu')
                         del m.model
+                    if hasattr(m, "accelerator"):
+                        m.accelerator.free_memory()
+                    if hasattr(m, 'optimizer'):
+                        m.optimizer.to('cpu')
+                        del m.optimizer
+                    if hasattr(m, 'lr_scheduler'):
+                        m.lr_scheduler.to('cpu')
+                        del m.lr_scheduler
+                    if hasattr(m, 'trainer_state'):
+                        m.trainer_state.to('cpu')
+                        del m.trainer_state
+                    m.to('cpu')
                     del m
                 except:
                     pass
         gc.collect()
         if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-            torch.cuda.synchronize()
+            with torch.no_grad():
+                for i in range(torch.cuda.device_count()):
+                    torch.cuda.empty_cache()
+                    torch.cuda.synchronize(i)
+                    print(f"GPU {i} - Allocated: {torch.cuda.memory_allocated(i)/1024**3:.2f} GB, Reserved: {torch.cuda.memory_reserved(i)/1024**3:.2f} GB")
+        print(f"Allocated: {torch.cuda.memory_allocated(0) / 1024**3:.2f} GB")
+        print(f"Reserved: {torch.cuda.memory_reserved(0) / 1024**3:.2f} GB")
         print("GPU memory cleared!")
     
     def delete_vllm_model(model):
@@ -112,13 +137,18 @@ def main(grpo_config, model_config):
             batch_size=16, # hyperparameter
             shuffle=True,
         )
+        print(f"Allocated: {torch.cuda.memory_allocated(0) / 1024**3:.2f} GB")
+        print(f"Reserved: {torch.cuda.memory_reserved(0) / 1024**3:.2f} GB")
         attacker_model = LLM(
-            model=f"adv_rl_checkpoints/attacker_round_{i}",
+            model="meta-llama/Llama-3.1-8B-Instruct",    
             dtype="bfloat16",
             trust_remote_code=True,
+            enable_lora=True,
+            max_lora_rank=128,
             max_model_len=8192,
+            gpu_memory_utilization=0.85
         )
-        lora_request = None
+        lora_request = LoRARequest("attack_lora", 1, lora_path=f"adv_rl_checkpoints/attacker_round_{i}")
         attacker_tokenizer = AutoTokenizer.from_pretrained(
             f"adv_rl_checkpoints/attacker_round_{i}", trust_remote_code=True
         )
@@ -142,9 +172,9 @@ def main(grpo_config, model_config):
             )
 
             sampling_params = attacker_model.get_default_sampling_params()
-            if args.temperature is not None:
-                sampling_params.temperature = args.temperature
-            sampling_params.max_tokens = args.max_new_tokens
+           #  if args.temperature is not None:
+                # sampling_params.temperature = args.temperature
+            sampling_params.max_tokens = 1024
             attacker_outputs = attacker_model.generate(
                 attacker_input_texts, sampling_params, lora_request=lora_request
             )
@@ -158,7 +188,7 @@ def main(grpo_config, model_config):
                 attacker_goal = train_batch["Attacker Instruction"][i]
 
                 # Extract the attack prompt from the output
-                attacker_adv_prompt = extract_attack_prompt(attacker_output_text) # TODO import this
+                attacker_adv_prompt = extract_attack_prompt(attacker_output_text)
 
                 adv_prompt_results.append(
                     {
@@ -219,6 +249,13 @@ def main(grpo_config, model_config):
         
         # cleanup models
         cleanup_model(attack_trainer, defender_frozen)
+        attack_trainer = None
+        defender_frozen = None
+        del attack_trainer
+        del defender_frozen
+        gc.collect()
+        torch.cuda.empty_cache()
+        time.sleep(5)
         
         # TODO: generate a datset of attacks to be used in defender training
         create_attack_dataset(i)
