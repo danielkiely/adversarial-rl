@@ -17,6 +17,7 @@ import time
 import ray
 import contextlib
 import os
+import wandb
 
 # Custom imports
 from config import LocalGRPOConfig
@@ -264,8 +265,9 @@ def main(grpo_config, model_config):
         return Dataset.from_list(user_inputs)
 
     def set_wandb_run(role, round_idx):
+        wandb.run.name = f"{role}-round{round_idx}"
         grpo_config.run_name = f"{role}-round{round_idx}"
-
+        
     
     rounds = 4
     
@@ -277,7 +279,7 @@ def main(grpo_config, model_config):
     
     gpu_log_file = "gpu.log"
     
-    for i in range(rounds):
+    for i in range(1, rounds):
         # load frozen opponent and put on gpus 2, 3
         # if first round, load base. otherwise, load LoRA weights from checkpoint
         set_wandb_run("attacker", i)
@@ -302,6 +304,7 @@ def main(grpo_config, model_config):
             defender_frozen = PeftModel.from_pretrained(
                 defender_base_model,
                 defender_checkpoint,
+                is_trainable=True,
             )
             
         # frozen model only used for inference
@@ -329,6 +332,7 @@ def main(grpo_config, model_config):
             attacker_train_model = PeftModel.from_pretrained(
                 attacker_base_model,
                 attacker_checkpoint,
+                is_trainable=True,
             )
             
         set_device_map_grpo(attacker_base_string)
@@ -402,6 +406,7 @@ def main(grpo_config, model_config):
             attacker_frozen = PeftModel.from_pretrained(
                 attacker_base_model,
                 attacker_checkpoint,
+                is_trainable=True
             )
             
         # frozen model only used for inference
@@ -428,6 +433,7 @@ def main(grpo_config, model_config):
             defender_train_model = PeftModel.from_pretrained(
                 defender_base_model,
                 defender_checkpoint,
+                is_trainable=True,
             )
         
         # put defender on gpus 0, 1
