@@ -104,7 +104,7 @@ def main(grpo_config, model_config):
             with torch.no_grad():
                 for j in range(torch.cuda.device_count()):
                     torch.cuda.empty_cache()
-                    torch.cuda.synchronize(i)
+                    torch.cuda.synchronize(j)
         print("GPU memory cleared!")
     
     def delete_vllm_model(model):
@@ -146,7 +146,7 @@ def main(grpo_config, model_config):
         )
         # use vLLM to load attacker model from most recent checkpoint
         attacker_model = LLM(
-            model="meta-llama/Llama-3.1-8B-Instruct",    
+            model="meta-llama/Llama-3.2-3B-Instruct",    
             dtype="bfloat16",
             trust_remote_code=True,
             enable_lora=True,
@@ -263,8 +263,11 @@ def main(grpo_config, model_config):
             
         return Dataset.from_list(user_inputs)
 
+    def set_wandb_run(role, round_idx):
+        grpo_config.run_name = f"{role}-round{round_idx}"
+
     
-    rounds = 3
+    rounds = 5
     
     attacker_base_string = grpo_config.attacker_model_name_or_path
     defender_base_string = grpo_config.defender_model_name_or_path
@@ -277,6 +280,8 @@ def main(grpo_config, model_config):
     for i in range(rounds):
         # load frozen opponent and put on gpus 2, 3
         # if first round, load base. otherwise, load LoRA weights from checkpoint
+        set_wandb_run("attacker", i)
+        
         if i == 0:
             defender_base_model = None
             defender_frozen = AutoModelForCausalLM.from_pretrained(
@@ -325,13 +330,22 @@ def main(grpo_config, model_config):
         set_device_map_grpo(attacker_base_string)
 
         # train attacker
-        attack_trainer = GRPOTrainer(
-            args=grpo_config,
-            model=attacker_train_model,
-            peft_config=peft_config,
-            reward_funcs=[ALL_REWARD_FUNCS["InjecAgentToolCallingReward"](grpo_config, defender_frozen, "attacker")],
-            train_dataset=train_set,
-        )
+        if i == 0:
+            attack_trainer = GRPOTrainer(
+                args=grpo_config,
+                model=attacker_train_model,
+                peft_config=peft_config,
+                reward_funcs=[ALL_REWARD_FUNCS["InjecAgentToolCallingReward"](grpo_config, defender_frozen, "attacker")],
+                train_dataset=train_set,
+            )
+        else:
+            attack_trainer = GRPOTrainer(
+                args=grpo_config,
+                model=attacker_train_model,
+                reward_funcs=[ALL_REWARD_FUNCS["InjecAgentToolCallingReward"](grpo_config, defender_frozen, "attacker")],
+                train_dataset=train_set,
+            )
+            
         attack_trainer.train()
         
         # save attacker state
@@ -362,6 +376,7 @@ def main(grpo_config, model_config):
         defender_dataset.to_json('defender_dataset.json')
         log_gpu_usage(f"Defender dataset created for round {i}.", gpu_log_file)
 
+        set_wandb_run("defender", i)
         # load frozen attacker on gpus 2, 3
         if i == 0:
             attacker_base_model = None
@@ -411,13 +426,21 @@ def main(grpo_config, model_config):
         set_device_map_grpo(defender_base_string)
 
         # train defender
-        defend_trainer = GRPOTrainer(
-            args=grpo_config,
-            model=defender_train_model,
-            peft_config=peft_config,
-            reward_funcs=[ALL_REWARD_FUNCS["DefenderReward"](grpo_config)],
-            train_dataset=defender_dataset,
-        )
+        if i == 0:
+            defend_trainer = GRPOTrainer(
+                args=grpo_config,
+                model=defender_train_model,
+                peft_config=peft_config,
+                reward_funcs=[ALL_REWARD_FUNCS["DefenderReward"](grpo_config)],
+                train_dataset=defender_dataset,
+            )
+        else:
+            defend_trainer = GRPOTrainer(
+                args=grpo_config,
+                model=defender_train_model,
+                reward_funcs=[ALL_REWARD_FUNCS["DefenderReward"](grpo_config)],
+                train_dataset=defender_dataset,
+            )
         defend_trainer.train()
         
         log_gpu_usage(f"Defender training round {i} completed.", gpu_log_file)
