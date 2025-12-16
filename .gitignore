@@ -190,3 +190,5 @@ data/InjecAgent/tools.json
 adv_rl_checkpoints/
 adv_rl_saved_attacks/
 defender_dataset.json
+analysis/data/joint_training.xlsx
+.DS_Store
