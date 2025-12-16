@@ -206,16 +206,19 @@ class InjecAgentToolCallingReward:
                 truncation=True,
                 max_length=8192,
             )
-            input_ids = enc["input_ids"].to(model.device)
-            attention_mask = enc.get("attention_mask")
-            if attention_mask is not None:
-                attention_mask = attention_mask.to(model.device)
+
+            embed_device = model.get_input_embeddings().weight.device
+            input_ids = enc["input_ids"].to(embed_device)
+            attention_mask = enc["attention_mask"].to(embed_device) if "attention_mask" in enc else None
 
             pad_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else tokenizer.eos_token_id
             gen_kwargs = {"max_new_tokens": max_tokens}
             if temperature is not None:
+                print(f'setting temp to {temperature}...')
                 gen_kwargs["do_sample"] = True
-                gen_kwargs["temperature"] = temperature
+                gen_kwargs["temperature"] = float(temperature)
+                gen_kwargs['top_p'] = 1.0
+                gen_kwargs['top_k'] = 0
             else:
                 gen_kwargs["do_sample"] = False
 
@@ -236,7 +239,7 @@ class InjecAgentToolCallingReward:
             for i in range(outputs.shape[0]):
                 gen_ids = outputs[i, seq_len:]
                 texts.append(tokenizer.decode(gen_ids, skip_special_tokens=True))
-            
+            print(texts[0])
             return texts
         
         except Exception as e:

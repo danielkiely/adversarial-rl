@@ -146,7 +146,7 @@ def main(grpo_config, model_config):
         )
         # use vLLM to load attacker model from most recent checkpoint
         attacker_model = LLM(
-            model="meta-llama/Llama-3.2-3B-Instruct",    
+            model="meta-llama/Llama-3.1-8B-Instruct",    
             dtype="bfloat16",
             trust_remote_code=True,
             enable_lora=True,
@@ -267,7 +267,7 @@ def main(grpo_config, model_config):
         grpo_config.run_name = f"{role}-round{round_idx}"
 
     
-    rounds = 5
+    rounds = 4
     
     attacker_base_string = grpo_config.attacker_model_name_or_path
     defender_base_string = grpo_config.defender_model_name_or_path
@@ -289,6 +289,7 @@ def main(grpo_config, model_config):
                 torch_dtype=torch.bfloat16,
                 device_map="auto",
                 max_memory={2: "23.5GB", 3: "23.5GB"},
+                attn_implementation="flash_attention_2",
             )
         else:
             defender_base_model = AutoModelForCausalLM.from_pretrained(
@@ -296,6 +297,7 @@ def main(grpo_config, model_config):
                 torch_dtype=torch.bfloat16,
                 device_map="auto",
                 max_memory={2: "23.5GB", 3: "23.5GB"},
+                attn_implementation="flash_attention_2",
             )
             defender_frozen = PeftModel.from_pretrained(
                 defender_base_model,
@@ -314,6 +316,7 @@ def main(grpo_config, model_config):
                 torch_dtype=torch.bfloat16,
                 device_map="auto",
                 max_memory={0: "23.5GB", 1: "23.5GB"},
+                attn_implementation="flash_attention_2",
             )
         else:
             attacker_base_model = AutoModelForCausalLM.from_pretrained(
@@ -321,6 +324,7 @@ def main(grpo_config, model_config):
                 torch_dtype=torch.bfloat16,
                 device_map="auto",
                 max_memory={0: "23.5GB", 1: "23.5GB"},
+                attn_implementation="flash_attention_2",
             )
             attacker_train_model = PeftModel.from_pretrained(
                 attacker_base_model,
@@ -385,6 +389,7 @@ def main(grpo_config, model_config):
                 torch_dtype=torch.bfloat16,
                 device_map="auto",
                 max_memory={2: "23.5GB", 3: "23.5GB"},
+                attn_implementation="flash_attention_2",
             )
         else:
             attacker_base_model = AutoModelForCausalLM.from_pretrained(
@@ -392,6 +397,7 @@ def main(grpo_config, model_config):
                 torch_dtype=torch.bfloat16,
                 device_map="auto",
                 max_memory={2: "23.5GB", 3: "23.5GB"},
+                attn_implementation="flash_attention_2",
             )
             attacker_frozen = PeftModel.from_pretrained(
                 attacker_base_model,
@@ -409,6 +415,7 @@ def main(grpo_config, model_config):
                 torch_dtype=torch.bfloat16,
                 device_map="auto",
                 max_memory={0: "23.5GB", 1: "23.5GB"},
+                attn_implementation="flash_attention_2",
             )
         else:
             defender_base_model = AutoModelForCausalLM.from_pretrained(
@@ -416,6 +423,7 @@ def main(grpo_config, model_config):
                 torch_dtype=torch.bfloat16,
                 device_map="auto",
                 max_memory={0: "23.5GB", 1: "23.5GB"},
+                attn_implementation="flash_attention_2",
             )
             defender_train_model = PeftModel.from_pretrained(
                 defender_base_model,

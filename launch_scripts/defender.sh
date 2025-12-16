@@ -4,11 +4,11 @@ set -e
 
 export WANDB_PROJECT="Adversarial-RL"
 
-LR=1e-5
+LR=5e-6
 RUN_NAME=adv_rl_llama_3_2_3b_instruct_lora
 
-ATTACKER_MODEL_NAME_OR_PATH=meta-llama/Llama-3.2-3B-Instruct
-DEFENDER_MODEL_NAME_OR_PATH=meta-llama/Llama-3.2-3B-Instruct
+ATTACKER_MODEL_NAME_OR_PATH=meta-llama/Llama-3.1-8B-Instruct
+DEFENDER_MODEL_NAME_OR_PATH=meta-llama/Llama-3.1-8B-Instruct
 
 echo "starting training"
 export CUDA_VISIBLE_DEVICES=0,1,2,3

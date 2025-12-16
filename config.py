@@ -21,9 +21,9 @@ class LocalGRPOConfig(GRPOConfig):
         default="meta-llama/Llama-3.2-1B-Instruct"
     )
     model_dtype: Optional[str] = field(default="bfloat16")
-    max_completion_length: int = field(default=1024)
+    max_completion_length: int = field(default=512)
     save_total_limit: int = field(default=10)
-    seed: int = field(default=1024)
+    seed: int = field(default=512)
     max_grad_norm: float = field(default=0.2)
     loss_type: str = field(default="bnpo")
 
@@ -32,7 +32,7 @@ class LocalGRPOConfig(GRPOConfig):
     )
     soft_rewards: bool = field(default=True)
     target_model_max_completion_length: int = field(default=512)
-    target_model_temperature: float = field(default=None)
+    target_model_temperature: float = field(default=1.0)
     reasoning_effort: str = field(default="minimal")  # minimal, low, medium, high
     model_wise_reward_weights: Optional[list[float]] = field(default=None)
     output_dir: str = field(default="/scratch0/dmkiely/grpo_cache")
