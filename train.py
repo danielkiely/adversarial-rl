@@ -265,7 +265,6 @@ def main(grpo_config, model_config):
         return Dataset.from_list(user_inputs)
 
     def set_wandb_run(role, round_idx):
-        wandb.run.name = f"{role}-round{round_idx}"
         grpo_config.run_name = f"{role}-round{round_idx}"
         
     
@@ -274,8 +273,8 @@ def main(grpo_config, model_config):
     attacker_base_string = grpo_config.attacker_model_name_or_path
     defender_base_string = grpo_config.defender_model_name_or_path
     
-    attacker_checkpoint = None
-    defender_checkpoint = None
+    attacker_checkpoint = "adv_rl_checkpoints/attacker_round_0"
+    defender_checkpoint = "adv_rl_checkpoints/defender_round_0"
     
     gpu_log_file = "gpu.log"
     
@@ -304,7 +303,6 @@ def main(grpo_config, model_config):
             defender_frozen = PeftModel.from_pretrained(
                 defender_base_model,
                 defender_checkpoint,
-                is_trainable=True,
             )
             
         # frozen model only used for inference
@@ -334,7 +332,11 @@ def main(grpo_config, model_config):
                 attacker_checkpoint,
                 is_trainable=True,
             )
-            
+        
+        attacker_train_model.train()
+        attacker_train_model.config.use_cache = False
+        attacker_train_model.gradient_checkpointing_enable()
+        attacker_train_model.enable_input_require_grads()
         set_device_map_grpo(attacker_base_string)
 
         # train attacker
@@ -406,7 +408,6 @@ def main(grpo_config, model_config):
             attacker_frozen = PeftModel.from_pretrained(
                 attacker_base_model,
                 attacker_checkpoint,
-                is_trainable=True
             )
             
         # frozen model only used for inference
@@ -436,6 +437,10 @@ def main(grpo_config, model_config):
                 is_trainable=True,
             )
         
+        defender_train_model.train()
+        defender_train_model.config.use_cache = False
+        defender_train_model.gradient_checkpointing_enable()
+        defender_train_model.enable_input_require_grads()
         # put defender on gpus 0, 1
         set_device_map_grpo(defender_base_string)
 
