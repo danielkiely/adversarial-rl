@@ -272,20 +272,13 @@ def main(grpo_config, model_config):
     attacker_checkpoint = None
     defender_checkpoint = None
     
-    attacker_base_model = None
-    attacker_train_model = None
-    attacker_frozen = None
-    
-    defender_base_model = None
-    defender_train_model = None
-    defender_frozen = None
-    
     gpu_log_file = "gpu.log"
     
     for i in range(rounds):
         # load frozen opponent and put on gpus 2, 3
         # if first round, load base. otherwise, load LoRA weights from checkpoint
         if i == 0:
+            defender_base_model = None
             defender_frozen = AutoModelForCausalLM.from_pretrained(
                 defender_base_string,
                 torch_dtype=torch.bfloat16,
@@ -310,6 +303,7 @@ def main(grpo_config, model_config):
         
         # put attacker model on gpus 0, 1
         if i == 0:
+            attacker_base_model = None
             attacker_train_model = AutoModelForCausalLM.from_pretrained(
                 attacker_base_string,
                 torch_dtype=torch.bfloat16,
@@ -370,6 +364,7 @@ def main(grpo_config, model_config):
 
         # load frozen attacker on gpus 2, 3
         if i == 0:
+            attacker_base_model = None
             attacker_frozen = AutoModelForCausalLM.from_pretrained(
                 attacker_base_string,
                 torch_dtype=torch.bfloat16,
@@ -393,6 +388,7 @@ def main(grpo_config, model_config):
         attacker_frozen.requires_grad_(False)
         
         if i == 0:
+            defender_base_model = None
             defender_train_model = AutoModelForCausalLM.from_pretrained(
                 defender_base_string,
                 torch_dtype=torch.bfloat16,
