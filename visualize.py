@@ -72,7 +72,7 @@ def visualize_text_embeddings(
     ).fit_transform(X50)
 
     # 3. plot
-    plt.figure(figsize=(12, 8))
+    plt.figure(figsize=(3.5, 2.5))
 
     for label in dict.fromkeys(labels):  # preserves order
         idx = [j for j, l in enumerate(labels) if l == label]
@@ -172,13 +172,16 @@ def create_attack_list(attacker_checkpoint: str) -> List[str]:
         # TODO: save them in a file
         return res
 
+def main():
+    checkpoints = []
+    labels = []
+    text_groups = []
+    for i in range(4):
+        checkpoints.append(f"adv_rl_checkpoints/attackers/attacker_round_{i}")
+        labels.append(f"Round {i}")
+        text_groups.append(create_attack_list(f"adv_rl_checkpoints/attackers/attacker_round_{i}"))
 
-checkpoints = []
-labels = []
-text_groups = []
-for i in [0, 20, 40, 60, 80]:
-    checkpoints.append(f"adv_rl_checkpoints/attackers/attacker_round_{i}")
-    labels.append(f"Round {i}")
-    text_groups.append(create_attack_list(f"adv_rl_checkpoints/attacker_round_{i}"))
+    visualize_text_embeddings(text_groups, labels)
 
-visualize_text_embeddings(text_groups, labels)
+if __name__=="__main__":
+    main()
