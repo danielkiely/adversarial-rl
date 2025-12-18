@@ -20,6 +20,8 @@ from tqdm import tqdm
 import gc
 import ray
 import contextlib
+from typing import List
+import json
 
 from utils import ATTACKER_SYS_PROMPT
 from reward_func import extract_attack_prompt
@@ -85,9 +87,8 @@ def visualize_text_embeddings(
     plt.ylabel("UMAP-2")
     plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
     plt.tight_layout()
-    plt.show()
+    plt.savefig('analysis/plots/attack_prompt_embeddings.png', dpi=300, bbox_inches='tight')
 
-    return Z
 
 
 def create_attack_list(attacker_checkpoint: str) -> List[str]:
@@ -97,7 +98,7 @@ def create_attack_list(attacker_checkpoint: str) -> List[str]:
             attacker_checkpoint (str): path to attacker checkpoint
         """
         # load eval data as raw json, Dataset, and DataLoader
-        eval_raw = json.load(open(grpo_config.dataset, "r"))
+        eval_raw = json.load(open('data/InjecAgent/dataset/eval.json', "r"))
         eval_dataset = Dataset.from_list(eval_raw)
         eval_loader = DataLoader(
             eval_dataset,
@@ -176,8 +177,8 @@ checkpoints = []
 labels = []
 text_groups = []
 for i in [0, 20, 40, 60, 80]:
-    checkpoints.append(f"adv_rl_checkpoints/attacker_round_{i}")
+    checkpoints.append(f"adv_rl_checkpoints/attackers/attacker_round_{i}")
     labels.append(f"Round {i}")
     text_groups.append(create_attack_list(f"adv_rl_checkpoints/attacker_round_{i}"))
 
-Z = visualize_text_embeddings(text_groups, labels)
+visualize_text_embeddings(text_groups, labels)

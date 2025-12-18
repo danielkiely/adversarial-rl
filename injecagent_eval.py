@@ -179,7 +179,7 @@ def main():
         )
 
         # Perform attack
-        if "lora" in args.attacker_model_name_or_path.lower():
+        if False:
             attacker_model = LLM(
                 model=args.attacker_base_model_name_or_path,
                 dtype=args.attacker_model_dtype,
@@ -193,15 +193,15 @@ def main():
             )
         else:
             attacker_model = LLM(
-                model=args.attacker_model_name_or_path,
+                model=args.attacker_base_model_name_or_path,
                 dtype=args.attacker_model_dtype,
                 trust_remote_code=True,
 		        max_model_len=8192,
             )
             lora_request = None
-            attacker_tokenizer = AutoTokenizer.from_pretrained(
-                args.attacker_model_name_or_path, trust_remote_code=True
-            )
+        attacker_tokenizer = AutoTokenizer.from_pretrained(
+            args.attacker_base_model_name_or_path, trust_remote_code=True
+        )
 
         adv_prompt_results = []
         for validation_step, validation_batch in tqdm(
@@ -304,12 +304,12 @@ def main():
             dtype=args.target_model_dtype,
             trust_remote_code=True,
             tensor_parallel_size=torch.cuda.device_count(),
-	        max_model_len=8192,
-            enable_lora=True,
-            max_lora_rank=128,
+	     max_model_len=8192,
+            #enable_lora=True,
+            #max_lora_rank=128,
             gpu_memory_utilization=0.85
         )
-        lora_request = LoRARequest("target_lora", 1, lora_path=args.target_model_name_or_path)
+        #lora_request_defend = LoRARequest("target_lora", 2, lora_path=args.target_model_name_or_path)
     target_tokenizer = AutoTokenizer.from_pretrained(
         args.target_model_name_or_path, trust_remote_code=True
     )
@@ -511,6 +511,7 @@ def main():
             )
             sampling_params = target_model.get_default_sampling_params()
             sampling_params.max_tokens = args.val_max_new_tokens
+            # TODO: insert LoRA request here.
             target_model_outputs = target_model.generate(
                 target_model_input_texts, sampling_params
             )
