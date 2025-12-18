@@ -72,23 +72,29 @@ def visualize_text_embeddings(
     ).fit_transform(X50)
 
     # 3. plot
-    plt.figure(figsize=(3.5, 2.5))
+    fig, ax = plt.subplots(figsize=(4.6, 3.2))
+
 
     for label in dict.fromkeys(labels):  # preserves order
         idx = [j for j, l in enumerate(labels) if l == label]
-        plt.scatter(
+        ax.scatter(
             Z[idx, 0], Z[idx, 1],
-            s=50,
-            alpha=0.8,
+            s=28,
+            facecolors='none',
+            linewidths=1.0,
+            alpha=1.0,
             label=label,
+            rasterized=True,
         )
 
-    plt.xlabel("UMAP-1")
-    plt.ylabel("UMAP-2")
-    plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
-    plt.tight_layout()
-    plt.savefig('analysis/plots/attack_prompt_embeddings.png', dpi=300, bbox_inches='tight')
 
+    ax.set_xlabel("UMAP-1")
+    ax.set_ylabel("UMAP-2")
+
+    ax.legend(loc="best", frameon=False, fontsize=8)
+
+    fig.tight_layout()
+    fig.savefig("analysis/plots/attack_prompt_embeddings.png", dpi=300)
 
 
 def create_attack_list(attacker_checkpoint: str) -> List[str]:
