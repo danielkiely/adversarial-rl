@@ -273,12 +273,12 @@ def main(grpo_config, model_config):
     attacker_base_string = grpo_config.attacker_model_name_or_path
     defender_base_string = grpo_config.defender_model_name_or_path
     
-    attacker_checkpoint = "adv_rl_checkpoints/attacker_round_0"
+    attacker_checkpoint = "adv_rl_checkpoints/checkpoint-80"
     defender_checkpoint = "adv_rl_checkpoints/defender_round_0"
     
     gpu_log_file = "gpu.log"
     
-    for i in range(1, rounds):
+    for i in range(0, rounds):
         # load frozen opponent and put on gpus 2, 3
         # if first round, load base. otherwise, load LoRA weights from checkpoint
         set_wandb_run("attacker", i)
@@ -310,7 +310,7 @@ def main(grpo_config, model_config):
         defender_frozen.requires_grad_(False)
         
         # put attacker model on gpus 0, 1
-        if i == 0:
+        if i == -1:
             attacker_base_model = None
             attacker_train_model = AutoModelForCausalLM.from_pretrained(
                 attacker_base_string,
@@ -340,7 +340,7 @@ def main(grpo_config, model_config):
         set_device_map_grpo(attacker_base_string)
 
         # train attacker
-        if i == 0:
+        if i == -1:
             attack_trainer = GRPOTrainer(
                 args=grpo_config,
                 model=attacker_train_model,
@@ -388,7 +388,7 @@ def main(grpo_config, model_config):
 
         set_wandb_run("defender", i)
         # load frozen attacker on gpus 2, 3
-        if i == 0:
+        if i == -1:
             attacker_base_model = None
             attacker_frozen = AutoModelForCausalLM.from_pretrained(
                 attacker_base_string,

@@ -4,7 +4,7 @@ set -e
 
 export WANDB_PROJECT="Adversarial-RL"
 
-LR=5e-6
+LR=1e-5
 RUN_NAME=adv_rl_llama_3_2_3b_instruct_lora
 
 ATTACKER_MODEL_NAME_OR_PATH=meta-llama/Llama-3.1-8B-Instruct
@@ -19,10 +19,10 @@ python train.py \
     --reward_functions InjecAgentToolCallingReward \
     --dataset data/InjecAgent/dataset/train.json \
     --attn_implementation flash_attention_2 \
-    --num_generations 4 \
+    --num_generations 8 \
     --num_iterations 1 \
-    --per_device_train_batch_size 2 \
-    --gradient_accumulation_steps 8 \
+    --per_device_train_batch_size 8 \
+    --gradient_accumulation_steps 4 \
     --max_steps 20 \
     --num_train_epochs 1 \
     --bf16 True \
@@ -32,7 +32,7 @@ python train.py \
     --learning_rate ${LR} \
     --lr_scheduler_type constant_with_warmup \
     --use_peft True \
-    --lora_r 128 \
+    --lora_r 32 \
     --lora_alpha 64 \
     --lora_dropout 0.05 \
     --logging_steps 1 \

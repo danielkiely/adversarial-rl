@@ -247,28 +247,33 @@ class InjecAgentToolCallingReward:
             return [""] * len(prompts)
     
 
-    def run_target_model(self, i, user_inputs):
+    def run_target_model(self, i, user_inputs, batch_size=8):
         """
         just sets up prompt template and calls function to query the llm model
         """
         tokenizer = self.all_target_tokenizer[i]
+        outputs = []
 
-        messages = [
-            [
-                {"role": "system", "content": INJECAGENT_SYS_PROMPT},
-                {"role": "user", "content": user_input},
+        for start in range(0, len(user_inputs), batch_size):
+            batch = user_inputs[start: start + batch_size]
+
+            messages = [
+                [
+                    {"role": "system", "content": INJECAGENT_SYS_PROMPT},
+                    {"role": "user", "content": user_input},
+                ]
+                for user_input in batch
             ]
-            for user_input in user_inputs
-        ]
-        prompts = tokenizer.apply_chat_template(
-            messages, add_generation_prompt=True, tokenize=False
-        )
-
-        return self.query_huggingface_text_batch(
-            prompts,
-            max_tokens=self.config.target_model_max_completion_length,
-            temperature=self.config.target_model_temperature,
-        )
+            prompts = tokenizer.apply_chat_template(
+                messages, add_generation_prompt=True, tokenize=False
+            )
+            batch_out = self.query_huggingface_text_batch(
+                prompts,
+                max_tokens=self.config.target_model_max_completion_length,
+                temperature=self.config.target_model_temperature,
+            )
+            outputs.extend(batch_out)
+        return outputs
 
 
     def __call__(self, prompts, completions, **kwargs):
