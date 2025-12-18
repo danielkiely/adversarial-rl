@@ -264,48 +264,52 @@ def main():
 
     # Load target model
     if (
-        "/" not in args.target_model_name_or_path
-        or "anthropic" in args.target_model_name_or_path.lower()
+        "/" not in args.target_base_model_name_or_path
+        or "anthropic" in args.target_base_model_name_or_path.lower()
     ):
-        if "gpt" in args.target_model_name_or_path.lower():
-            env_name = args.target_model_name_or_path.upper().replace("-", "_")
+        if "gpt" in args.target_base_model_name_or_path.lower():
+            env_name = args.target_base_model_name_or_path.upper().replace("-", "_")
             api_version = os.environ[f"{env_name}_AZURE_API_VERSION"]
             api_key = os.environ[f"{env_name}_API_KEY"]
             endpoint = os.environ[f"{env_name}_ENDPOINT"]
             endpoint = f"https://{endpoint}"
-            model_name = f"{args.target_model_name_or_path}"
+            model_name = f"{args.target_base_model_name_or_path}"
             client = AzureOpenAI(
                 api_version=api_version,
                 api_key=api_key,
                 azure_endpoint=endpoint,
             )
-        elif "gemini" in args.target_model_name_or_path.lower():
+        elif "gemini" in args.target_base_model_name_or_path.lower():
             api_key = os.environ["GEMINI_API_KEY"]
-            model_name = f"{args.target_model_name_or_path}"
+            model_name = f"{args.target_base_model_name_or_path}"
             client = OpenAI(
                 api_key=api_key,
                 base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
             )
-        elif "anthropic" in args.target_model_name_or_path.lower():
+        elif "anthropic" in args.target_base_model_name_or_path.lower():
             client = AnthropicBedrock(
                 aws_access_key=os.environ["AWS_ACCESS_KEY_ID"],
                 aws_secret_key=os.environ["AWS_SECRET_ACCESS_KEY"],
                 aws_session_token=os.environ["AWS_SESSION_TOKEN"],
                 aws_region=os.environ["AWS_REGION"],
             )
-            model_name = args.target_model_name_or_path
+            model_name = args.target_base_model_name_or_path
         else:
             raise ValueError(
-                f"Unsupported target model: {args.target_model_name_or_path}"
+                f"Unsupported target model: {args.target_base_model_name_or_path}"
             )
     else:
         target_model = LLM(
-            model=args.target_model_name_or_path,
+            model=args.target_base_model_name_or_path,
             dtype=args.target_model_dtype,
             trust_remote_code=True,
             tensor_parallel_size=torch.cuda.device_count(),
-	    max_model_len=8192,
+	        max_model_len=8192,
+            enable_lora=True,
+            max_lora_rank=128,
+            gpu_memory_utilization=0.85
         )
+        lora_request = LoRARequest("target_lora", 1, lora_path=args.target_model_name_or_path)
     target_tokenizer = AutoTokenizer.from_pretrained(
         args.target_model_name_or_path, trust_remote_code=True
     )
@@ -322,7 +326,7 @@ def main():
         shuffle=False,
     )
 
-    if "/" not in args.target_model_name_or_path or "anthropic" in args.target_model_name_or_path.lower():
+    if "/" not in args.target_base_model_name_or_path or "anthropic" in args.target_base_model_name_or_path.lower():
         tool_dict = injecagent_get_tool_dict(gpt_format=True)
 
         target_model_results = []
@@ -486,7 +490,7 @@ def main():
                 )
                 user_inputs.append(user_prompt_filled)
 
-            if "secalign" in args.target_model_name_or_path.lower():
+            if "secalign" in args.target_base_model_name_or_path.lower():
                 target_model_messages = [
                     [
                         {"role": "user", "content": INJECAGENT_SYS_PROMPT},
