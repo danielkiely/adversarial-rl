@@ -16,7 +16,6 @@ for x in [0, 20, 40, 60, 80]:
 # Add labels and legend
 plt.xlabel('Step')
 plt.ylabel('Reward')
-plt.title('Attacker vs Defender Rewards Over Time')
 plt.legend()
 
 # Save and show

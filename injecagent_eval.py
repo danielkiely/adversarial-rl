@@ -1,8 +1,3 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-# This source code is licensed under the license found in the
-# LICENSE file in the root directory of this source tree.
-
 from transformers import AutoTokenizer, HfArgumentParser
 from datasets import Dataset
 import torch
@@ -327,10 +322,7 @@ def main():
         shuffle=False,
     )
 
-    if (
-        "/" not in args.target_model_name_or_path
-        or "anthropic" in args.target_model_name_or_path.lower()
-    ):
+    if "/" not in args.target_model_name_or_path or "anthropic" in args.target_model_name_or_path.lower():
         tool_dict = injecagent_get_tool_dict(gpt_format=True)
 
         target_model_results = []
