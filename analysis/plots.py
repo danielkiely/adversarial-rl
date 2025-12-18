@@ -2,7 +2,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 # Read the data
-data = pd.read_csv('analysis/data/joint_training.csv')
+data = pd.read_csv('analysis/data/warmed_up_training.csv')
 
 # Create the plot
 plt.figure(figsize=(10, 5))
@@ -20,5 +20,5 @@ plt.legend()
 
 # Save and show
 plt.tight_layout()
-plt.savefig('analysis/plots/training_rewards.png')
+plt.savefig('analysis/plots/warmed_up_training_rewards.png')
 plt.show()
