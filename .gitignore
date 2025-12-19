@@ -194,3 +194,4 @@ analysis/data/joint_training.xlsx
 .DS_Store
 analysis/data/warmed_up_training.xlsx
 analysis/data/evals.xlsx
+analysis/attack_outputs
