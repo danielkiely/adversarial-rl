@@ -26,6 +26,17 @@ import json
 from utils import ATTACKER_SYS_PROMPT
 from reward_func import extract_attack_prompt
 
+
+def save_prompts(prompts, path):
+    with open(path, "w") as f:
+        json.dump(prompts, f)
+
+def load_prompts(path):
+    with open(path, "r") as f:
+        return json.load(f)
+
+
+
 def delete_vllm_model(model):
     destroy_model_parallel()
     destroy_distributed_environment()
@@ -103,6 +114,9 @@ def create_attack_list(attacker_checkpoint: str) -> List[str]:
         Args:
             attacker_checkpoint (str): path to attacker checkpoint
         """
+        cache_file = cache_path_for_checkpoint(attacker_checkpoint).replace(".jsonl", ".json")
+        if os.path.exists(cache_file):
+            return load_prompts(cache_file)
         # load eval data as raw json, Dataset, and DataLoader
         eval_raw = json.load(open('data/InjecAgent/dataset/eval.json', "r"))
         eval_dataset = Dataset.from_list(eval_raw)
@@ -176,6 +190,7 @@ def create_attack_list(attacker_checkpoint: str) -> List[str]:
         del attacker_tokenizer
         
         # TODO: save them in a file
+        save_prompts(res, cache_file)
         return res
 
 def main():
@@ -183,11 +198,12 @@ def main():
     labels = []
     text_groups = []
     for i in range(4):
-        checkpoints.append(f"adv_rl_checkpoints/attackers/attacker_round_{i}")
+        checkpoints.append(f"adv_rl_checkpoints/joint_training/attacker_round_{i}")
         labels.append(f"Round {i}")
-        text_groups.append(create_attack_list(f"adv_rl_checkpoints/attackers/attacker_round_{i}"))
+        text_groups.append(create_attack_list(f"adv_rl_checkpoints/joint_training/attacker_round_{i}"))
 
     visualize_text_embeddings(text_groups, labels)
+    
 
 if __name__=="__main__":
     main()
