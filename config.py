@@ -1,0 +1,56 @@
+from dataclasses import dataclass, field
+from typing import Optional
+
+from trl import GRPOConfig
+
+
+@dataclass
+class LocalGRPOConfig(GRPOConfig):
+    dataset: str = field(default=None)
+    epsilon: float = field(default=0.5)
+
+    attacker_model_name_or_path: Optional[str] = field(
+        default="meta-llama/Llama-3.2-1B-Instruct"
+    )
+    defender_model_name_or_path: Optional[str] = field(
+        default="meta-llama/Llama-3.2-1B-Instruct"
+    )
+    model_dtype: Optional[str] = field(default="bfloat16")
+    max_completion_length: int = field(default=512)
+    save_total_limit: int = field(default=10)
+    seed: int = field(default=512)
+    max_grad_norm: float = field(default=0.2)
+    loss_type: str = field(default="bnpo")
+
+    reward_functions: list[str] = field(
+        default_factory=lambda: ["InjecAgentToolCallingReward"]
+    )
+    soft_rewards: bool = field(default=True)
+    target_model_max_completion_length: int = field(default=512)
+    target_model_temperature: float = field(default=1.0)
+    reasoning_effort: str = field(default="minimal")  # minimal, low, medium, high
+    model_wise_reward_weights: Optional[list[float]] = field(default=None)
+    output_dir: str = field(default="/scratch0/dmkiely/grpo_cache")
+
+
+@dataclass
+class EvalConfig:
+    validation_data_path: str = None
+    val_batch_size: int = 16
+    max_new_tokens: int = 1024
+    val_max_new_tokens: int = 512
+
+    attacker_model_name_or_path: str = "meta-llama/Llama-3.2-1B-Instruct"
+    attacker_base_model_name_or_path: str = "meta-llama/Llama-3.2-1B-Instruct"
+    target_model_name_or_path: str = "meta-llama/Llama-3.1-8B-Instruct"
+    target_base_model_name_or_path: str = "meta-llama/Llama-3.1-8B-Instruct"
+    reasoning_effort: str = field(default="minimal")  # minimal, low, medium, high
+    attacker_model_dtype: str = "bfloat16"
+    target_model_dtype: str = "bfloat16"
+    temperature: float = None
+
+    enable_wandb: bool = False
+    wandb_project_name: str = "RL-Hammer"
+    run_name: str = "test"
+    output_dir: str = "outputs/test"
+    save_name: str = "default"
