@@ -7,7 +7,7 @@ This repo is adapted from the [RL-Hammer](https://github.com/facebookresearch/rl
 Visit the [InjecAgent](https://github.com/uiuc-kang-lab/InjecAgent/tree/main/data) repo, dowload `test_cases_dh_base.json`,
 and move to `data/InjecAgent/raw', and then run `python data/InjecAgent/split_dataset.py`.
 
-# #Launch scripts
+## Launch scripts
 The `launch_scripts/` directory contains scripts to launch the attack and defense agents.
 
 ```sh
